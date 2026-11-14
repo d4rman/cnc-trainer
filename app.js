@@ -1,4 +1,4 @@
-const VERSION = '0.5';
+const VERSION = '0.6';
 document.getElementById('ver').textContent = VERSION;
 
 // Переключение вкладок
@@ -12,9 +12,16 @@ document.querySelectorAll('nav button').forEach(btn => {
 
 // Редактор G-кода со своей клавиатурой
 const code = document.getElementById('code');
-const DRAFT_KEY = 'cnc.draft';
-try { code.value = localStorage.getItem(DRAFT_KEY) || ''; } catch {}
-function saveDraft() { try { localStorage.setItem(DRAFT_KEY, code.value); } catch {} }
+// Режим: 'mill' фрезер, 'lathe' токарка. У каждого свой черновик.
+let mode = 'mill';
+try { mode = localStorage.getItem('cnc.mode') === 'lathe' ? 'lathe' : 'mill'; } catch {}
+const draftKey = () => 'cnc.draft.' + mode;
+function loadDraft() {
+  // 'cnc.draft': черновик из версий до 0.6, был только фрезерный
+  try { code.value = localStorage.getItem(draftKey()) || (mode === 'mill' && localStorage.getItem('cnc.draft')) || ''; } catch {}
+}
+function saveDraft() { try { localStorage.setItem(draftKey(), code.value); } catch {} }
+loadDraft();
 code.addEventListener('input', () => {
   // Набранное обычной клавиатурой переводим в заглавные
   const p = code.selectionStart;
@@ -23,12 +30,21 @@ code.addEventListener('input', () => {
   saveDraft();
 });
 
-const KEY_ROWS = [
-  ['scroll', ['G00', 'G01', 'G02', 'G03', 'G90', 'G91', 'G54', 'G40', 'G41', 'G42', 'G43', 'G28',
-              'M03', 'M04', 'M05', 'M06', 'M08', 'M09', 'M30']],
-  ['c7', ['X', 'Y', 'Z', 'I', 'J', 'K', 'R', 'F', 'S', 'T', 'H', 'D', 'U', 'W']],
-  ['c6', ['7', '8', '9', '.', '⌫', 'ABC', '4', '5', '6', '-', '␣', ';', '1', '2', '3', '0', '↵']],
-];
+const NUM_KEYS = ['7', '8', '9', '.', '⌫', 'ABC', '4', '5', '6', '-', '␣', ';', '1', '2', '3', '0', '↵'];
+const KEY_ROWS = {
+  mill: [
+    ['scroll', ['G00', 'G01', 'G02', 'G03', 'G90', 'G91', 'G54', 'G40', 'G41', 'G42', 'G43', 'G28',
+                'M03', 'M04', 'M05', 'M06', 'M08', 'M09', 'M30']],
+    ['c7', ['X', 'Y', 'Z', 'I', 'J', 'K', 'R', 'F', 'S', 'T', 'H', 'D', 'G', 'M']],
+    ['c6', NUM_KEYS],
+  ],
+  lathe: [
+    ['scroll', ['G00', 'G01', 'G02', 'G03', 'G50', 'G96', 'G97', 'G98', 'G99', 'G40', 'G41', 'G42', 'G28',
+                'M03', 'M04', 'M05', 'M08', 'M09', 'M30']],
+    ['c7', ['X', 'Z', 'U', 'W', 'I', 'K', 'R', 'F', 'S', 'T', 'P', 'Q', 'G', 'M']],
+    ['c6', NUM_KEYS],
+  ],
+};
 
 function pressKey(k, btn) {
   const s = code.selectionStart, e = code.selectionEnd;
@@ -56,17 +72,36 @@ function pressKey(k, btn) {
 }
 
 const keys = document.getElementById('keys');
-for (const [cls, list] of KEY_ROWS) {
-  const row = document.createElement('div');
-  row.className = 'row ' + cls;
-  for (const k of list) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = k;
-    row.append(b);
+function buildKeys() {
+  keys.textContent = '';
+  code.inputMode = 'none';
+  for (const [cls, list] of KEY_ROWS[mode]) {
+    const row = document.createElement('div');
+    row.className = 'row ' + cls;
+    for (const k of list) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = k;
+      row.append(b);
+    }
+    keys.append(row);
   }
-  keys.append(row);
 }
+
+const modeBtn = document.getElementById('mode');
+function applyMode() {
+  modeBtn.textContent = mode === 'mill' ? 'Фрезер' : 'Токарка';
+  document.getElementById('plot-note').textContent = mode === 'mill' ? 'вид сверху, XY' : 'Z вправо, X вверх';
+  buildKeys();
+}
+modeBtn.addEventListener('click', () => {
+  mode = mode === 'mill' ? 'lathe' : 'mill';
+  try { localStorage.setItem('cnc.mode', mode); } catch {}
+  loadDraft();
+  applyMode();
+  if (!document.getElementById('view-plot').hidden) checkProgram();
+});
+applyMode();
 // mousedown/touchstart гасим, чтобы курсор не уходил из поля; в ряду кодов касание не гасим, иначе ряд не листается
 keys.addEventListener('mousedown', e => e.preventDefault());
 keys.addEventListener('touchstart', e => { if (!e.target.closest('.scroll')) e.preventDefault(); }, { passive: false });
@@ -87,9 +122,11 @@ function drawPlot(moves) {
   g.scale(dpr, dpr);
   g.clearRect(0, 0, W, H);
 
-  // Границы: вся траектория плюс ноль детали
+  // Границы: траектория плюс ноль детали
   let x0 = 0, x1 = 0, y0 = 0, y1 = 0;
-  for (const m of moves) for (const [x, y] of m.pts) {
+  // Масштаб считаем по резанию: дальний отвод на G00 не должен сжимать деталь в точку
+  const cuts = moves.filter(m => m.type !== 'rapid');
+  for (const m of cuts.length ? cuts : moves) for (const [x, y] of m.pts) {
     x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
   }
   const pad = 24;
@@ -101,7 +138,8 @@ function drawPlot(moves) {
   g.strokeStyle = '#243044'; g.lineWidth = 1; g.setLineDash([]);
   g.beginPath(); g.moveTo(0, py(0)); g.lineTo(W, py(0)); g.moveTo(px(0), 0); g.lineTo(px(0), H); g.stroke();
   g.fillStyle = '#8a96a8'; g.font = '12px sans-serif';
-  g.fillText('X', W - 14, py(0) - 6); g.fillText('Y', px(0) + 6, 14);
+  const lathe = mode === 'lathe';
+  g.fillText(lathe ? 'Z' : 'X', W - 14, py(0) - 6); g.fillText(lathe ? 'X' : 'Y', px(0) + 6, 14);
 
   g.lineWidth = 2; g.lineJoin = 'round';
   for (const m of moves) {
@@ -116,13 +154,15 @@ function drawPlot(moves) {
     const [x, y] = moves[moves.length - 1].pts.at(-1);
     g.fillStyle = '#fff'; g.beginPath(); g.arc(px(x), py(y), 4, 0, 7); g.fill();
   }
-  document.getElementById('extent').textContent = moves.length
-    ? `X от ${+x0.toFixed(3)} до ${+x1.toFixed(3)}, Y от ${+y0.toFixed(3)} до ${+y1.toFixed(3)}`
-    : 'Движений нет';
+  const n = v => +v.toFixed(3);
+  document.getElementById('extent').textContent = !moves.length ? 'Движений нет'
+    : !cuts.length ? 'Резания нет, только быстрые ходы'
+    : lathe ? `Резание: Z от ${n(x0)} до ${n(x1)}, X (диаметр) от ${n(y0 * 2)} до ${n(y1 * 2)}`
+            : `Резание: X от ${n(x0)} до ${n(x1)}, Y от ${n(y0)} до ${n(y1)}`;
 }
 
 function checkProgram() {
-  const { moves, issues } = runMill(code.value);
+  const { moves, issues } = runProgram(code.value, mode);
   drawPlot(moves);
   const nErr = issues.filter(i => i.level === 'error').length;
   const nWarn = issues.length - nErr;

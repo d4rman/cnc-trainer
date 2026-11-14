@@ -22,9 +22,12 @@
 
 <main>
   <section id="tab-editor" class="tab active">
-    <div class="seg" id="view">
-      <button data-view="code" class="active">Код</button>
-      <button data-view="plot">Проверить</button>
+    <div class="bar">
+      <div class="seg" id="view">
+        <button data-view="code" class="active">Код</button>
+        <button data-view="plot">Проверить</button>
+      </div>
+      <button id="mode"></button>
     </div>
     <div id="view-code">
       <textarea id="code" inputmode="none" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Пиши программу кнопками ниже"></textarea>
@@ -33,7 +36,7 @@
     <div id="view-plot" hidden>
       <canvas id="plot"></canvas>
       <div class="legend">
-        <span class="rapid">G00</span><span class="feed">G01</span><span class="arc">G02/03</span><span class="muted">вид сверху, XY</span>
+        <span class="rapid">G00</span><span class="feed">G01</span><span class="arc">G02/03</span><span class="muted" id="plot-note"></span>
       </div>
       <p id="extent" class="muted"></p>
       <p id="summary"></p>

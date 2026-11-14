@@ -1,14 +1,20 @@
-// Разбор и проверка программы Fanuc. Пока только фрезерный режим, плоскость G17 (XY).
+// Разбор и проверка программы Fanuc.
+// mode 'mill':  фрезерный, плоскость G17. Рисунок: X вправо, Y вверх.
+// mode 'lathe': токарный (G-коды системы A), X в диаметре, U/W приращения. Рисунок: Z вправо, X (радиус) вверх,
+//               G02 на рисунке идёт по часовой (резец сзади, как в учебниках).
 // X10 без точки рисуется как 10 мм, но считается ошибкой (на станках пользователя точка обязательна).
 // Возвращает { moves, issues }:
-//   moves:  { type: 'rapid' | 'feed' | 'arc', pts: [[x, y, z], ...], line }
+//   moves:  { type: 'rapid' | 'feed' | 'arc', pts: [[h, v, z], ...], line }  h, v: координаты на рисунке
 //   issues: { line, level: 'error' | 'warn', msg }
 
-const OK_G = new Set([17, 21, 40, 41, 42, 43, 49, 54, 55, 56, 57, 58, 59, 80, 94, 95, 98, 99]);
-const ADDRESSES = 'XYZIJKRFSTHDPQNO';
+const OK_G_MILL = new Set([17, 21, 40, 41, 42, 43, 49, 54, 55, 56, 57, 58, 59, 80, 94, 95, 98, 99]);
+const OK_G_LATHE = new Set([18, 21, 40, 41, 42, 54, 55, 56, 57, 58, 59, 80, 97, 98, 99]);
+const ADDRESSES = 'XYZUWIJKRFSTHDPQNO';
 const num = n => String(+n.toFixed(3));
 
-function runMill(text) {
+function runProgram(text, mode) {
+  const L = mode === 'lathe';
+  const POINT = L ? 'XZUWIKR' : 'XYZIJKR';      // буквы, где нужна десятичная точка
   const moves = [], issues = [];
   const once = new Set();
   const add = (level, line, msg, onceKey) => {
@@ -18,8 +24,8 @@ function runMill(text) {
   const err = (line, msg, k) => add('error', line, msg, k);
   const warn = (line, msg, k) => add('warn', line, msg, k);
 
-  // z: 100 = "где-то высоко", пока программа сама не задала Z
-  const st = { x: 0, y: 0, z: 100, motion: 0, abs: true, f: null, s: null, spindle: false, placed: false, ended: false };
+  // x, y: положение на рисунке (фрезер: X, Y; токарка: Z, радиус). z: только фрезер, 100 = "где-то высоко"
+  const st = { x: 0, y: 0, z: L ? 0 : 100, motion: 0, abs: true, f: null, s: null, spindle: false, clamp: false, placed: false, ended: false };
   const lines = text.toUpperCase().split('\n');
   let blocks = 0;
 
@@ -38,7 +44,7 @@ function runMill(text) {
       const rest = blk.replace(/([A-Z])\s*([+-]?(?:\d+\.?\d*|\.\d+))/g, (m, l, v) => {
         words.push([l, parseFloat(v)]);
         // Размер без точки: на стойке без "калькуляторного" ввода X10 это 0.010 мм
-        if ('XYZIJKR'.includes(l) && !v.includes('.') && parseFloat(v) !== 0)
+        if (POINT.includes(l) && !v.includes('.') && parseFloat(v) !== 0)
           err(line, l + v + ' без точки: станок может понять это как ' + l + num(parseFloat(v) / 1000) + '. Пиши ' + l + v + '.');
         return '';
       }).trim();
@@ -46,19 +52,30 @@ function runMill(text) {
 
       const w = {};
       const mCodes = [];
-      let motionInBlock = null, skipMove = false;
+      let motionInBlock = null, skipMove = false, g50 = false, g96 = false;
+      const setMotion = v => {
+        if (motionInBlock !== null) err(line, 'Два G-кода движения в одном кадре');
+        motionInBlock = v; st.motion = v;
+      };
       for (const [l, v] of words) {
         if (l === 'G') {
-          if (v === 0 || v === 1 || v === 2 || v === 3) {
-            if (motionInBlock !== null) err(line, 'Два G-кода движения в одном кадре');
-            motionInBlock = v; st.motion = v;
-          } else if (v === 90) st.abs = true;
-          else if (v === 91) st.abs = false;
+          if (v === 0 || v === 1 || v === 2 || v === 3) setMotion(v);
           else if (v === 28 || v === 4 || v === 53) skipMove = true;
-          else if (v === 73 || v === 76 || (v >= 81 && v <= 89)) { err(line, 'Цикл G' + v + ' пока не поддерживается'); skipMove = true; }
-          else if (v === 18 || v === 19) err(line, 'Плоскость G' + v + ' пока не поддерживается, только G17');
           else if (v === 20) err(line, 'Дюймы (G20) не поддерживаются');
-          else if (!OK_G.has(v)) err(line, 'Неизвестный код G' + v);
+          else if (L) {
+            if (v === 32) setMotion(1);                         // резьба одним проходом: рисуем как G01
+            else if (v === 50) { g50 = true; skipMove = true; }
+            else if (v === 96) g96 = true;
+            else if ((v >= 70 && v <= 76) || v === 90 || v === 92 || v === 94) { err(line, 'Цикл G' + v + ' пока не поддерживается'); skipMove = true; }
+            else if (v === 17 || v === 19) err(line, 'На токарном плоскость G18, G' + v + ' не подходит');
+            else if (!OK_G_LATHE.has(v)) err(line, 'Неизвестный код G' + v);
+          } else {
+            if (v === 90) st.abs = true;
+            else if (v === 91) st.abs = false;
+            else if (v === 73 || v === 76 || (v >= 81 && v <= 89)) { err(line, 'Цикл G' + v + ' пока не поддерживается'); skipMove = true; }
+            else if (v === 18 || v === 19) err(line, 'Плоскость G' + v + ' пока не поддерживается, только G17');
+            else if (!OK_G_MILL.has(v)) err(line, 'Неизвестный код G' + v);
+          }
         } else if (l === 'M') {
           mCodes.push(v);
         } else if (ADDRESSES.includes(l)) {
@@ -70,7 +87,8 @@ function runMill(text) {
       }
 
       if ('F' in w) { if (w.F <= 0) err(line, 'Подача F должна быть больше нуля'); else st.f = w.F; }
-      if ('S' in w) st.s = w.S;
+      if ('S' in w) { if (g50) st.clamp = true; else st.s = w.S; }   // G50 S...: ограничение оборотов
+      if (g96 && !st.clamp) warn(line, 'G96 без ограничения оборотов (нет G50 S...)');
       for (const m of mCodes) {
         if (m === 3 || m === 4) {
           st.spindle = true;
@@ -80,29 +98,36 @@ function runMill(text) {
         else if (m === 98 || m === 99) err(line, 'Подпрограммы (M98/M99) пока не поддерживаются');
       }
 
-      const hasXY = 'X' in w || 'Y' in w;
-      const hasAxis = hasXY || 'Z' in w;
+      // Оси рисунка: фрезер X, Y; токарка Z (или W), X (или U)
+      const has = (...ls) => ls.some(l => l in w);
+      const hasXY = L ? has('X', 'Z', 'U', 'W') : has('X', 'Y');
+      const hasAxis = hasXY || (!L && 'Z' in w);
       if (skipMove) {
-        // G28: инструмент уходит в ноль станка, где он в координатах детали, неизвестно
-        if ('Z' in w) st.z = 100;
+        // G28 и подобное: где инструмент в координатах детали, неизвестно
+        if (!L && 'Z' in w) st.z = 100;
         if (hasXY) st.placed = false;
         continue;
       }
       const isArc = st.motion === 2 || st.motion === 3;
-      const arcData = 'I' in w || 'J' in w || 'R' in w;
-      if (!hasAxis && !(isArc && arcData && motionInBlock !== null)) continue;
+      const ci = L ? w.K : w.I, cj = L ? w.I : w.J;             // смещение центра дуги по осям рисунка
+      const hasIJ = ci !== undefined || cj !== undefined;
+      if (!hasAxis && !(isArc && (hasIJ || 'R' in w) && motionInBlock !== null)) continue;
 
-      const tx = 'X' in w ? (st.abs ? w.X : st.x + w.X) : st.x;
-      const ty = 'Y' in w ? (st.abs ? w.Y : st.y + w.Y) : st.y;
-      const tz = 'Z' in w ? (st.abs ? w.Z : st.z + w.Z) : st.z;
+      // k: множитель (диаметр в радиус). absL: абсолютная буква, incL: буква приращения (токарка)
+      const target = (absL, incL, cur, k) =>
+        absL in w ? (L || st.abs ? w[absL] * k : cur + w[absL] * k)
+                  : (incL && incL in w ? cur + w[incL] * k : cur);
+      const tx = L ? target('Z', 'W', st.x, 1) : target('X', null, st.x, 1);
+      const ty = L ? target('X', 'U', st.y, 0.5) : target('Y', null, st.y, 1);
+      const tz = L ? 0 : target('Z', null, st.z, 1);
       const from = [st.x, st.y, st.z], to = [tx, ty, tz];
       const moved = tx !== st.x || ty !== st.y;
 
       if (st.motion === 0) {
-        // Первый подвод по XY не рисуем: откуда идёт инструмент, неизвестно
+        // Первый подвод не рисуем: откуда идёт инструмент, неизвестно
         if (st.placed) {
           moves.push({ type: 'rapid', pts: [from, to], line });
-          if (tz < 0 || (st.z < 0 && moved)) warn(line, 'Быстрый ход G00 ниже Z0: возможен удар в материал');
+          if (!L && (tz < 0 || (st.z < 0 && moved))) warn(line, 'Быстрый ход G00 ниже Z0: возможен удар в материал');
         }
       } else {
         if (st.f === null) err(line, 'Не задана подача F', 'noF');
@@ -114,7 +139,7 @@ function runMill(text) {
           let cx, cy, ok = true;
           if ('R' in w) {
             const dx = tx - st.x, dy = ty - st.y, d = Math.hypot(dx, dy), r = Math.abs(w.R);
-            if (d < 1e-9) { err(line, 'Дуга с R: начало и конец совпадают. Для полного круга нужны I/J'); ok = false; }
+            if (d < 1e-9) { err(line, 'Дуга с R: начало и конец совпадают. Для полного круга нужны ' + (L ? 'I/K' : 'I/J')); ok = false; }
             else if (d > 2 * r + 0.001) { err(line, 'Радиус R' + num(r) + ' слишком мал: между точками ' + num(d) + ' мм'); ok = false; }
             else {
               const h = Math.sqrt(Math.max(0, r * r - d * d / 4));
@@ -123,16 +148,15 @@ function runMill(text) {
               cx = st.x + dx / 2 + side * h * dy / d;
               cy = st.y + dy / 2 - side * h * dx / d;
             }
-          } else if ('I' in w || 'J' in w) {
-            const ci = w.I || 0, cj = w.J || 0;
-            cx = st.x + ci; cy = st.y + cj;
-            const r0 = Math.hypot(ci, cj), r1 = Math.hypot(tx - cx, ty - cy);
-            if (r0 < 1e-9) { err(line, 'Дуга: I и J равны нулю'); ok = false; }
+          } else if (hasIJ) {
+            cx = st.x + (ci || 0); cy = st.y + (cj || 0);
+            const r0 = Math.hypot(ci || 0, cj || 0), r1 = Math.hypot(tx - cx, ty - cy);
+            if (r0 < 1e-9) { err(line, 'Дуга: ' + (L ? 'I и K' : 'I и J') + ' равны нулю'); ok = false; }
             else if (Math.abs(r0 - r1) > 0.01) {
               err(line, 'Конец дуги не лежит на окружности: радиус в начале ' + num(r0) + ', в конце ' + num(r1));
               ok = false;
             }
-          } else { err(line, 'Для дуги нужен R или I/J'); ok = false; }
+          } else { err(line, 'Для дуги нужен R или ' + (L ? 'I/K' : 'I/J')); ok = false; }
 
           if (ok) {
             const a0 = Math.atan2(st.y - cy, st.x - cx), a1 = Math.atan2(ty - cy, tx - cx);
@@ -159,4 +183,4 @@ function runMill(text) {
   return { moves, issues };
 }
 
-if (typeof module !== 'undefined') module.exports = { runMill };
+if (typeof module !== 'undefined') module.exports = { runProgram };

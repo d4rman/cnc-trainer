@@ -1,5 +1,5 @@
 // При добавлении нового файла в приложение: дописать его в FILES и поднять номер в CACHE.
-const CACHE = 'cnc-v7';
+const CACHE = 'cnc-v8';
 const FILES = [
   './',
   'index.html',

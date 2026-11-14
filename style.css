@@ -140,6 +140,41 @@ main { flex: 1; overflow-y: auto; padding: 10px; min-height: 0; }
   font-weight: 600;
 }
 
+.ghost { min-height: 48px; padding: 0 14px; background: none; color: var(--text); border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+.wide { width: 100%; margin-top: 8px; }
+.filebtn { display: flex; align-items: center; justify-content: center; }
+.gap { margin-top: 28px; }
+#task-reset { min-height: 36px; padding: 0 12px; background: none; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 14px; }
+
+select, input[type=text] {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;   /* 17px: меньше 16 iPhone увеличивает экран при вводе */
+}
+#calc-inputs label { display: block; margin-top: 10px; font-size: 15px; color: var(--muted); }
+#calc-inputs input { margin-top: 4px; }
+.formula { margin: 10px 2px; color: var(--accent); font-family: ui-monospace, Menlo, Consolas, monospace; }
+.result { margin: 14px 0 0; padding: 12px; background: var(--panel); border: 1px solid var(--ok); border-radius: 10px; font-weight: 600; }
+#quiz-q { white-space: pre-line; margin: 8px 2px; }
+.answer { display: flex; gap: 8px; }
+.answer input { flex: 1; min-width: 0; }
+.answer .big { width: auto; padding: 0 16px; }
+#quiz-res { min-height: 1.4em; margin: 10px 2px; font-weight: 600; }
+#quiz-res.ok { color: var(--ok); }
+#quiz-res.bad { color: var(--bad); }
+
+#prog-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+#prog-list li { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+#prog-list .name { flex: 1; overflow-wrap: anywhere; }
+#prog-list .kind { font-size: 13px; color: var(--muted); }
+#prog-list button { min-height: 40px; padding: 0 10px; background: none; color: var(--bad); border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 14px; }
+#task-list li.group, #prog-list li.group { min-height: 0; padding: 10px 2px 0; background: none; border: 0; color: var(--muted); font-size: 14px; }
+
 nav {
   display: flex;
   background: var(--panel);

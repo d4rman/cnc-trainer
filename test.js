@@ -10,9 +10,13 @@ const runLathe = s => gcode.runProgram(dots(s), 'lathe');
 const tasks = require('./tasks.json');
 const cmp = (code, task) => gcode.comparePaths(
   gcode.runProgram(code, task.mode).moves, gcode.runProgram(task.solution, task.mode).moves, task.mode, task.stock);
+const passes = (code, task) => !gcode.runProgram(code, task.mode).issues.length && cmp(code, task).ok;
+assert.strictEqual(new Set(tasks.map(t => t.id)).size, tasks.length);
 for (const task of tasks) {
   assert.deepStrictEqual(gcode.runProgram(task.solution, task.mode).issues, [], task.id);
-  assert.ok(cmp(task.solution, task).ok, task.id);
+  assert.ok(passes(task.solution, task), task.id);
+  // "Найди ошибку": программа с ошибкой не должна засчитываться
+  if (task.type === 'bug') assert.ok(!passes(task.code, task), task.id);
 }
 const [sq, , , face, , contour] = tasks;
 // Другая высота подхода и квадрат в обратную сторону: тоже верно

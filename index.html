@@ -30,7 +30,7 @@
       <button id="mode"></button>
     </div>
     <div id="task-box" hidden>
-      <div class="task-head"><b id="task-title"></b><button id="task-close">Закрыть</button></div>
+      <div class="task-head"><b id="task-title"></b><button id="task-reset">Сначала</button><button id="task-close">Закрыть</button></div>
       <p id="task-text"></p>
     </div>
     <div id="view-code">
@@ -57,14 +57,37 @@
   </section>
   <section id="tab-calc" class="tab">
     <h2>Расчёты</h2>
-    <p class="muted">Здесь будут обороты, подача, коррекции (шаг 7).</p>
+    <select id="calc-pick"></select>
+    <p id="calc-formula" class="formula"></p>
+    <div id="calc-inputs"></div>
+    <p id="calc-out" class="result"></p>
+
+    <h2 class="gap">Тренировка</h2>
+    <p class="muted" id="quiz-score"></p>
+    <p id="quiz-q"></p>
+    <div class="answer">
+      <button id="quiz-sign" class="ghost">+/-</button>
+      <input id="quiz-a" type="text" inputmode="decimal" autocomplete="off" placeholder="Ответ">
+      <button id="quiz-go" class="big">Ответить</button>
+    </div>
+    <p id="quiz-res"></p>
+    <button id="quiz-next" class="ghost wide">Другая задача</button>
   </section>
   <section id="tab-data" class="tab">
-    <h2>Данные</h2>
-    <p class="muted">Здесь будут мои программы, экспорт и импорт (шаг 8).</p>
+    <h2>Мои программы</h2>
+    <button id="prog-save" class="big">Сохранить программу из редактора</button>
+    <ul id="prog-list"></ul>
+
+    <h2 class="gap">Резервная копия</h2>
+    <p class="muted">Все данные лежат только в этом телефоне. Делай копию в файл, чтобы не потерять программы и прогресс.</p>
+    <button id="export" class="big">Сохранить копию в файл</button>
+    <label class="ghost wide filebtn">Загрузить копию из файла<input id="import" type="file" accept=".json,application/json" hidden></label>
+    <p class="muted" id="data-msg"></p>
+
+    <h2 class="gap">Приложение</h2>
     <p class="muted">Версия <span id="ver"></span></p>
     <p class="muted" id="offline-ready">Офлайн: подготовка...</p>
-    <button id="reload" class="big">Обновить приложение</button>
+    <button id="reload" class="ghost wide">Обновить приложение</button>
   </section>
 </main>
 

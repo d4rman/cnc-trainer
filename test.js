@@ -232,4 +232,25 @@ assert.deepStrictEqual(gcode.runProgram('S4770 M03 F955;\nM30;', 'mill').issues,
 assert.ok(suggestFeeds({ mode: 'mill', mat: 0, tool: 'end', toolMat: 'carbide', d: NaN, z: 4, op: 'rough', maxRpm: 8000 }).error);
 assert.ok(suggestFeeds({ mode: 'mill', mat: 0, tool: 'end', toolMat: 'carbide', d: 10, z: NaN, op: 'rough', maxRpm: 8000 }).error);
 
+// Уроки: примеры без замечаний (кроме помеченных bad), задания существуют, ответы в пределах вариантов
+const lessons = require('./lessons.json');
+assert.strictEqual(new Set(lessons.map(l => l.id)).size, lessons.length);
+for (const l of lessons) {
+  assert.ok(l.cards.some(c => c.t === 'quiz'), l.id);
+  l.cards.forEach((c, i) => {
+    const where = l.id + ':' + i;
+    if (c.t === 'text') {
+      assert.ok(c.text, where);
+      if (c.code) {
+        const iss = gcode.runProgram(c.code.join('\n'), c.mode || l.mode).issues;
+        if (c.bad) assert.ok(iss.length > 0, where); else assert.deepStrictEqual(iss, [], where);
+      }
+    } else if (c.t === 'quiz') {
+      assert.ok(c.q && c.why && c.options.length >= 2 && c.answer >= 0 && c.answer < c.options.length, where);
+    } else if (c.t === 'task') {
+      assert.ok(tasks.some(t => t.id === c.id), where);
+    } else assert.fail(where);
+  });
+}
+
 console.log('все проверки прошли');

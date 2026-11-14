@@ -20,8 +20,30 @@
   <span class="head-right"><span id="net" class="badge"></span><button id="help-open" aria-label="Справка">?</button></span>
 </header>
 
+<div id="toast" hidden></div>
+
 <main>
-  <section id="tab-editor" class="tab active">
+  <section id="tab-learn" class="tab active">
+    <div id="learn-home">
+      <div class="stat-row">
+        <div><b id="streak">0</b><span>дней подряд</span></div>
+        <div><b id="lessons-done">0</b><span>уроков</span></div>
+        <div><b id="ach-count">0</b><span>достижений</span></div>
+      </div>
+      <div id="daily" class="card"></div>
+      <h2>Уроки</h2>
+      <ul id="lesson-list" class="list"></ul>
+      <h2 class="gap">Достижения</h2>
+      <ul id="ach-list" class="list"></ul>
+    </div>
+    <div id="lesson-view" hidden>
+      <button id="lesson-back" class="ghost">&larr; Все уроки</button>
+      <h2 id="lesson-title"></h2>
+      <div id="lesson-cards"></div>
+    </div>
+  </section>
+
+  <section id="tab-editor" class="tab">
     <div class="bar">
       <div class="seg" id="view">
         <button data-view="code" class="active">Код</button>
@@ -92,7 +114,8 @@
 </main>
 
 <nav>
-  <button data-tab="editor" class="active">Редактор</button>
+  <button data-tab="learn" class="active">Уроки</button>
+  <button data-tab="editor">Редактор</button>
   <button data-tab="tasks">Задания</button>
   <button data-tab="calc">Расчёты</button>
   <button data-tab="data">Данные</button>
@@ -132,6 +155,16 @@
 
 <dialog id="help">
   <h2>Как пользоваться</h2>
+
+  <h3>Уроки</h3>
+  <ul>
+    <li>Начинай с вкладки <b>Уроки</b> и иди по порядку: 13 уроков от простого к сложному.</li>
+    <li>В уроке три вида карточек: объяснение с примером, вопрос и задание.</li>
+    <li>Под примером кнопка <b>Показать траекторию</b>: видно, что делает программа. <b>В редактор</b>: открыть пример и поменять его самому.</li>
+    <li>Урок пройден, когда отвечены все вопросы и сделаны все задания.</li>
+    <li><b>Задание дня</b> меняется каждый день. Счётчик "дней подряд" растёт, если заходить каждый день.</li>
+    <li>Внизу список <b>достижений</b>: что уже получено и как получить остальные.</li>
+  </ul>
 
   <h3>Редактор</h3>
   <ul>
@@ -194,5 +227,6 @@
 <script src="gcode.js"></script>
 <script src="feeds.js"></script>
 <script src="app.js"></script>
+<script src="learn.js"></script>
 </body>
 </html>

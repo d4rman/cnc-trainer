@@ -1,4 +1,4 @@
-const VERSION = '1.4';
+const VERSION = '1.5';
 document.getElementById('ver').textContent = VERSION;
 
 // Переключение вкладок
@@ -118,8 +118,11 @@ keys.addEventListener('pointerup', e => {
 // Проверка программы и рисунок траектории
 const COLORS = { rapid: '#7d8ba1', feed: '#3ecf8e', arc: '#f5a623' };
 
-function drawPlot(moves, refMoves = []) {
-  const cv = document.getElementById('plot');
+// События для уроков и достижений (learn.js): задание решено, ответ в тренировке и так далее
+function emit(name, data) { if (typeof onAppEvent === 'function') onAppEvent(name, data); }
+
+// Рисует траекторию на холсте cv, возвращает строку с размерами резания. pm: 'mill' или 'lathe'
+function drawPlot(moves, refMoves = [], cv = document.getElementById('plot'), pm = mode) {
   const dpr = devicePixelRatio || 1;
   const W = cv.clientWidth, H = cv.clientHeight;
   cv.width = W * dpr; cv.height = H * dpr;
@@ -144,7 +147,7 @@ function drawPlot(moves, refMoves = []) {
   g.strokeStyle = '#243044'; g.lineWidth = 1; g.setLineDash([]);
   g.beginPath(); g.moveTo(0, py(0)); g.lineTo(W, py(0)); g.moveTo(px(0), 0); g.lineTo(px(0), H); g.stroke();
   g.fillStyle = '#8a96a8'; g.font = '12px sans-serif';
-  const lathe = mode === 'lathe';
+  const lathe = pm === 'lathe';
   g.fillText(lathe ? 'Z' : 'X', W - 14, py(0) - 6); g.fillText(lathe ? 'X' : 'Y', px(0) + 6, 14);
 
   // Контур задания: широкая бледная линия под траекторией
@@ -175,7 +178,7 @@ function drawPlot(moves, refMoves = []) {
     g.fillStyle = '#fff'; g.beginPath(); g.arc(px(x), py(y), 4, 0, 7); g.fill();
   }
   const n = v => +v.toFixed(3);
-  document.getElementById('extent').textContent = !moves.length ? 'Движений нет'
+  return !moves.length ? 'Движений нет'
     : !cuts.length ? 'Резания нет, только быстрые ходы'
     : lathe ? `Резание: Z от ${n(x0)} до ${n(x1)}, X (диаметр) от ${n(y0 * 2)} до ${n(y1 * 2)}`
             : `Резание: X от ${n(x0)} до ${n(x1)}, Y от ${n(y0)} до ${n(y1)}`;
@@ -203,10 +206,11 @@ function checkProgram() {
       : '';
     res.textContent = msg || 'Задание выполнено';
     res.className = msg ? '' : 'ok';
+    emit(msg ? 'taskFail' : 'taskPass', task.id);
     if (!msg) markDone(task.id);
     sol.textContent = task.solution;
   }
-  drawPlot(moves, refMoves);
+  document.getElementById('extent').textContent = drawPlot(moves, refMoves);
   const nWarn = issues.length - nErr;
   const sum = document.getElementById('summary');
   sum.textContent = issues.length ? `Ошибок: ${nErr}, предупреждений: ${nWarn}` : 'Замечаний нет';
@@ -255,6 +259,7 @@ function markDone(id) {
   done.push(id);
   try { localStorage.setItem('cnc.done', JSON.stringify(done)); } catch {}
   renderTasks();
+  emit('taskDone', id);
 }
 
 function renderTasks() {
@@ -327,7 +332,7 @@ document.getElementById('task-reset').addEventListener('click', () => {
 
 fetch('tasks.json')
   .then(r => r.json())
-  .then(list => { tasks = list; renderTasks(); })
+  .then(list => { tasks = list; renderTasks(); emit('tasksLoaded'); })
   .catch(() => { document.getElementById('task-count').textContent = 'Не удалось загрузить задания'; });
 
 // Расчёты. Одна таблица и для калькулятора, и для тренировки.
@@ -427,6 +432,7 @@ document.getElementById('quiz-go').addEventListener('click', () => {
   if (!quiz.answered) {   // считаем только первую попытку
     quiz.answered = true;
     score.total++; if (ok) score.ok++;
+    emit('calcQuiz', ok);
     try { localStorage.setItem('cnc.quiz', JSON.stringify(score)); } catch {}
     showScore();
   }
@@ -553,6 +559,7 @@ document.getElementById('prog-save').addEventListener('click', () => {
   if (old && !confirm(`Программа "${name}" уже есть. Заменить?`)) return;
   programs = programs.filter(p => p !== old);
   programs.unshift({ name, mode, code: code.value, date: new Date().toISOString().slice(0, 10) });
+  emit('programSaved');
   storePrograms();
 });
 renderPrograms();
@@ -577,6 +584,7 @@ document.getElementById('export').addEventListener('click', () => {
     URL.revokeObjectURL(a.href);
   }
   dataMsg.textContent = 'Копия создана: ' + file.name;
+  emit('exported');
 });
 
 document.getElementById('import').addEventListener('change', async e => {

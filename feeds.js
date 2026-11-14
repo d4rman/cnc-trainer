@@ -21,7 +21,7 @@ const HSS_VC = 0.3, HSS_FEED = 0.8;          // быстрорез: скорос
 
 // p: { mode: 'mill' | 'lathe', mat: номер в MATERIALS, tool: 'end' | 'face' | 'drill', toolMat: 'carbide' | 'hss',
 //      d: диаметр инструмента, z: число зубьев, op: 'rough' | 'finish', maxRpm }
-// Возвращает { text: строки для показа, lines: кадры для вставки в программу } или { error }
+// Возвращает { text: строки для показа, lines: кадры для вставки в программу, note: пояснение про F } или { error }
 function suggestFeeds(p) {
   const m = MATERIALS[p.mat];
   if (!m) return { error: 'Выбери материал' };
@@ -37,6 +37,9 @@ function suggestFeeds(p) {
       text: [`Vc = ${vc} м/мин (G96)`, `f = ${f} мм/об`, `Ограничение: ${p.maxRpm} об/мин`,
              `Глубина резания: до ${finish ? 0.5 : 2} мм`],
       lines: [`G50 S${p.maxRpm};`, `G96 S${vc} M03;`, `G99 F${f};`],
+      note: `Почему F${f}, а не сотни: на токарном подача задаётся на оборот (G99). F${f} значит ${f} мм за один оборот шпинделя. `
+        + `При G96 обороты всё время меняются с диаметром, а подача на оборот остаётся той же, поэтому стружка одинаковая. `
+        + `В мм/мин это было бы F = n · f: например при 1000 об/мин ${Math.round(1000 * f)} мм/мин.`,
     };
   }
 
@@ -62,7 +65,11 @@ function suggestFeeds(p) {
   }
   F = Math.max(1, F < 50 ? Math.round(F) : Math.round(F / 5) * 5);
   text.push(`F = ${F} мм/мин`);
-  return { text, lines: [`S${n} M03 F${F};`] };
+  return {
+    text, lines: [`S${n} M03 F${F};`],
+    note: `На фрезерном подача задаётся в мм/мин (G94): F${F} значит ${F} мм за минуту. `
+      + (drill ? 'Считается как F = n · f (обороты на подачу за оборот).' : 'Считается как F = n · z · fz (обороты на число зубьев на подачу на зуб).'),
+  };
 }
 
 if (typeof module !== 'undefined') module.exports = { MATERIALS, suggestFeeds };

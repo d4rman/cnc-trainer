@@ -1,4 +1,4 @@
-const VERSION = '1.1';
+const VERSION = '1.2';
 document.getElementById('ver').textContent = VERSION;
 
 // Переключение вкладок
@@ -446,6 +446,7 @@ function updateFeeds() {
     d: toNum(fd('d').value), z: toNum(fd('z').value), op: fd('op').value, maxRpm: toNum(fd('max').value),
   });
   fd('out').textContent = feedsResult.error || feedsResult.text.join('\n') + '\n\n' + feedsResult.lines.join('\n');
+  fd('note').textContent = feedsResult.note || '';
   fd('insert').disabled = !!feedsResult.error;
   // Запоминаем выбор отдельно для фрезера и токарки
   const saved = {};
@@ -473,6 +474,14 @@ fd('insert').addEventListener('click', () => {
   saveDraft();
   feedsDlg.close();
 });
+
+// Справка: кнопка "?" в шапке; при самом первом запуске открывается сама
+const helpDlg = document.getElementById('help');
+document.getElementById('help-open').addEventListener('click', () => helpDlg.showModal());
+document.getElementById('help-close').addEventListener('click', () => helpDlg.close());
+try {
+  if (!localStorage.getItem('cnc.helpSeen')) { localStorage.setItem('cnc.helpSeen', '1'); helpDlg.showModal(); }
+} catch {}
 
 // Мои программы
 let programs = [];

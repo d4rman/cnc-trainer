@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ЧПУ тренажёр</title>
+<meta name="theme-color" content="#0b0f17">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ЧПУ">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>ЧПУ тренажёр</h1>
+  <span id="net" class="badge"></span>
+</header>
+
+<main>
+  <section id="tab-editor" class="tab active">
+    <h2>Редактор</h2>
+    <p class="muted">Здесь будет ввод G-кода и рисунок траектории (шаги 2-4).</p>
+  </section>
+  <section id="tab-tasks" class="tab">
+    <h2>Задания</h2>
+    <p class="muted">Здесь будут задания и "найди ошибку" (шаги 5-6).</p>
+  </section>
+  <section id="tab-calc" class="tab">
+    <h2>Расчёты</h2>
+    <p class="muted">Здесь будут обороты, подача, коррекции (шаг 7).</p>
+  </section>
+  <section id="tab-data" class="tab">
+    <h2>Данные</h2>
+    <p class="muted">Здесь будут мои программы, экспорт и импорт (шаг 8).</p>
+    <p class="muted">Версия <span id="ver"></span></p>
+    <p class="muted" id="offline-ready">Офлайн: подготовка...</p>
+  </section>
+</main>
+
+<nav>
+  <button data-tab="editor" class="active">Редактор</button>
+  <button data-tab="tasks">Задания</button>
+  <button data-tab="calc">Расчёты</button>
+  <button data-tab="data">Данные</button>
+</nav>
+
+<script src="app.js"></script>
+</body>
+</html>

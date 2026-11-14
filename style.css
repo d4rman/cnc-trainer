@@ -73,6 +73,23 @@ main { flex: 1; overflow-y: auto; padding: 10px; min-height: 0; }
 #issues li.error { border-left-color: var(--bad); }
 #issues li b { margin-right: 6px; }
 
+#task-box { flex: 0 0 auto; max-height: 30%; overflow-y: auto; padding: 8px 10px; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; font-size: 15px; }
+#task-box p { margin: 4px 0 0; }
+#task-title { flex: 1; padding: 6px 0; color: var(--accent); }
+.task-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+#task-close { min-height: 36px; padding: 0 12px; background: none; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 14px; }
+
+#task-result { margin: 10px 2px 0; padding: 12px; border-radius: 10px; font-weight: 600; border: 1px solid var(--bad); color: var(--bad); }
+#task-result.ok { border-color: var(--ok); color: var(--ok); }
+#show-solution { margin-top: 14px; width: 100%; min-height: 46px; background: none; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+#solution { margin: 8px 0 0; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; font: 16px/1.5 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; }
+
+#task-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+#task-list li { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+#task-list .name { flex: 1; }
+#task-list .kind { font-size: 13px; color: var(--muted); }
+#task-list .mark { width: 22px; color: var(--ok); font-weight: 700; }
+
 #code {
   flex: 1;
   min-height: 80px;

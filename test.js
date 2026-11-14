@@ -6,6 +6,33 @@ const dots = s => s.replace(/([XYZUWIJKR])(-?\d+)(?![\d.])/g, '$1$2.');
 const runMill = s => gcode.runProgram(dots(s), 'mill');
 const runLathe = s => gcode.runProgram(dots(s), 'lathe');
 
+// Задания: каждое решение без замечаний и совпадает само с собой
+const tasks = require('./tasks.json');
+const cmp = (code, task) => gcode.comparePaths(
+  gcode.runProgram(code, task.mode).moves, gcode.runProgram(task.solution, task.mode).moves, task.mode, task.stock);
+for (const task of tasks) {
+  assert.deepStrictEqual(gcode.runProgram(task.solution, task.mode).issues, [], task.id);
+  assert.ok(cmp(task.solution, task).ok, task.id);
+}
+const [sq, , , face, , contour] = tasks;
+// Другая высота подхода и квадрат в обратную сторону: тоже верно
+assert.ok(cmp('G00 X0 Y0\nS1000 M03\nG00 Z2.\nG01 Z-2. F100\nY50.\nX50.\nY0\nX0\nG00 Z50.\nM30', sq).ok);
+// Не тот размер: лишнее резание и контур не весь
+let c = cmp(sq.solution.replace('X50.', 'X40.'), sq);
+assert.ok(!c.ok && c.missing && c.extraLine === 6);   // строка 6: Y50. при X40 идёт мимо контура
+// Не та глубина
+assert.ok(!cmp(sq.solution.replace('Z-2.', 'Z-1.'), sq).ok);
+// Квадрат не замкнут
+assert.deepStrictEqual(cmp(sq.solution.replace('Y0;\nG00 Z50', 'G00 Z50'), sq), { ok: false, missing: true, extraLine: null });
+// Торец: подход с X54 и до X0 вместо X-1 тоже верно (воздух и за осью не считаются)
+assert.ok(cmp(face.solution.replace('X52.', 'X54.').replace('X-1.', 'X0'), face).ok);
+// Торец не до центра
+assert.ok(cmp(face.solution.replace('X-1.', 'X10.'), face).missing);
+// Радиус не в ту сторону
+assert.ok(!cmp(contour.solution.replace('G02', 'G03'), contour).ok);
+// Та же дуга через I/K
+assert.ok(cmp(contour.solution.replace('R5.', 'I5. K0'), contour).ok);
+
 // Размер без точки это ошибка, ноль без точки можно
 assert.match(gcode.runProgram('G00 X10 Y0\nM30', 'mill').issues[0].msg, /X10 без точки.*X0\.01\./);
 assert.deepStrictEqual(gcode.runProgram('G00 X0 Y0 Z5.\nM30', 'mill').issues, []);

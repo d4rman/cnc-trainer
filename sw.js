@@ -1,11 +1,12 @@
 // При добавлении нового файла в приложение: дописать его в FILES и поднять номер в CACHE.
-const CACHE = 'cnc-v6';
+const CACHE = 'cnc-v7';
 const FILES = [
   './',
   'index.html',
   'style.css',
   'app.js',
   'gcode.js',
+  'tasks.json',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',

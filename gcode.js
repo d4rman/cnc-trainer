@@ -163,7 +163,7 @@ function runProgram(text, mode) {
             const r = Math.hypot(st.x - cx, st.y - cy);
             let sweep = cw ? a0 - a1 : a1 - a0;
             while (sweep <= 1e-9) sweep += 2 * Math.PI;   // совпали начало и конец: полный круг
-            const steps = Math.max(8, Math.ceil(sweep / (Math.PI / 36)));
+            const steps = Math.max(8, Math.ceil(sweep / (Math.PI / 72)));   // шаг 2.5 градуса
             const pts = [from];
             for (let k = 1; k < steps; k++) {
               const a = a0 + (cw ? -1 : 1) * sweep * k / steps;
@@ -183,4 +183,42 @@ function runProgram(text, mode) {
   return { moves, issues };
 }
 
-if (typeof module !== 'undefined') module.exports = { runProgram };
+// Сравнение резания ученика с эталоном. Быстрые ходы и резание "по воздуху" не сравниваются.
+// Воздух: фрезер выше Z0; токарка правее Z0, ниже оси или снаружи заготовки диаметром stockD.
+// Направление и порядок проходов не важны, важна только геометрия.
+// Возвращает { ok, missing: эталон обработан не весь, extraLine: строка с лишним резанием или null }
+function comparePaths(userMoves, refMoves, mode, stockD, tol = 0.05) {
+  const E = 1e-9;
+  const isAir = mode === 'lathe'
+    ? p => p[0] > E || p[1] < -E || (stockD && p[1] > stockD / 2 + E)
+    : p => p[2] > E;
+  const segs = moves => {
+    const out = [];
+    for (const m of moves) if (m.type !== 'rapid')
+      for (let i = 1; i < m.pts.length; i++) out.push([m.pts[i - 1], m.pts[i], m.line]);
+    return out;
+  };
+  // Точки вдоль отрезка примерно через 1 мм, без тех, что в воздухе
+  const samples = ([a, b]) => {
+    const n = Math.min(200, Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]))));
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const p = [0, 1, 2].map(k => a[k] + (b[k] - a[k]) * i / n);
+      if (!isAir(p)) pts.push(p);
+    }
+    return pts;
+  };
+  const dist = (p, [a, b]) => {
+    const d = [0, 1, 2].map(k => b[k] - a[k]);
+    const len2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    const t = len2 ? Math.max(0, Math.min(1, [0, 1, 2].reduce((s, k) => s + (p[k] - a[k]) * d[k], 0) / len2)) : 0;
+    return Math.hypot(...[0, 1, 2].map(k => p[k] - a[k] - d[k] * t));
+  };
+  const us = segs(userMoves), rs = segs(refMoves);
+  const near = (p, list) => list.some(s => dist(p, s) <= tol);
+  const missing = rs.some(s => samples(s).some(p => !near(p, us)));
+  const bad = us.find(s => samples(s).some(p => !near(p, rs)));
+  return { ok: !missing && !bad, missing, extraLine: bad ? bad[2] : null };
+}
+
+if (typeof module !== 'undefined') module.exports = { runProgram, comparePaths };

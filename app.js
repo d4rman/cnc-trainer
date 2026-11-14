@@ -1,24 +1,23 @@
-const VERSION = '0.6';
+const VERSION = '0.7';
 document.getElementById('ver').textContent = VERSION;
 
 // Переключение вкладок
-document.querySelectorAll('nav button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('nav button, .tab').forEach(el => el.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-  });
-});
+function showTab(name) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
+}
+document.querySelectorAll('nav button').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 
 // Редактор G-кода со своей клавиатурой
 const code = document.getElementById('code');
 // Режим: 'mill' фрезер, 'lathe' токарка. У каждого свой черновик.
 let mode = 'mill';
 try { mode = localStorage.getItem('cnc.mode') === 'lathe' ? 'lathe' : 'mill'; } catch {}
-const draftKey = () => 'cnc.draft.' + mode;
+let task = null;   // открытое задание из tasks.json; у каждого задания свой черновик
+const draftKey = () => task ? 'cnc.task.' + task.id : 'cnc.draft.' + mode;
 function loadDraft() {
   // 'cnc.draft': черновик из версий до 0.6, был только фрезерный
-  try { code.value = localStorage.getItem(draftKey()) || (mode === 'mill' && localStorage.getItem('cnc.draft')) || ''; } catch {}
+  try { code.value = localStorage.getItem(draftKey()) || (!task && mode === 'mill' && localStorage.getItem('cnc.draft')) || ''; } catch {}
 }
 function saveDraft() { try { localStorage.setItem(draftKey(), code.value); } catch {} }
 loadDraft();
@@ -91,6 +90,7 @@ function buildKeys() {
 const modeBtn = document.getElementById('mode');
 function applyMode() {
   modeBtn.textContent = mode === 'mill' ? 'Фрезер' : 'Токарка';
+  modeBtn.disabled = !!task;   // в задании режим задан заданием
   document.getElementById('plot-note').textContent = mode === 'mill' ? 'вид сверху, XY' : 'Z вправо, X вверх';
   buildKeys();
 }
@@ -113,7 +113,7 @@ keys.addEventListener('pointerup', e => {
 // Проверка программы и рисунок траектории
 const COLORS = { rapid: '#7d8ba1', feed: '#3ecf8e', arc: '#f5a623' };
 
-function drawPlot(moves) {
+function drawPlot(moves, refMoves = []) {
   const cv = document.getElementById('plot');
   const dpr = devicePixelRatio || 1;
   const W = cv.clientWidth, H = cv.clientHeight;
@@ -126,7 +126,8 @@ function drawPlot(moves) {
   let x0 = 0, x1 = 0, y0 = 0, y1 = 0;
   // Масштаб считаем по резанию: дальний отвод на G00 не должен сжимать деталь в точку
   const cuts = moves.filter(m => m.type !== 'rapid');
-  for (const m of cuts.length ? cuts : moves) for (const [x, y] of m.pts) {
+  const refCuts = refMoves.filter(m => m.type !== 'rapid');
+  for (const m of [...(cuts.length ? cuts : moves), ...refCuts]) for (const [x, y] of m.pts) {
     x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
   }
   const pad = 24;
@@ -141,7 +142,16 @@ function drawPlot(moves) {
   const lathe = mode === 'lathe';
   g.fillText(lathe ? 'Z' : 'X', W - 14, py(0) - 6); g.fillText(lathe ? 'X' : 'Y', px(0) + 6, 14);
 
-  g.lineWidth = 2; g.lineJoin = 'round';
+  // Контур задания: широкая бледная линия под траекторией
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  g.strokeStyle = 'rgba(255,255,255,0.2)'; g.lineWidth = 8;
+  for (const m of refCuts) {
+    g.beginPath();
+    m.pts.forEach(([x, y], i) => i ? g.lineTo(px(x), py(y)) : g.moveTo(px(x), py(y)));
+    g.stroke();
+  }
+
+  g.lineWidth = 2; g.lineCap = 'butt';
   for (const m of moves) {
     g.strokeStyle = COLORS[m.type];
     g.setLineDash(m.type === 'rapid' ? [5, 5] : []);
@@ -163,8 +173,29 @@ function drawPlot(moves) {
 
 function checkProgram() {
   const { moves, issues } = runProgram(code.value, mode);
-  drawPlot(moves);
   const nErr = issues.filter(i => i.level === 'error').length;
+
+  // Задание: сравниваем резание с эталоном
+  const res = document.getElementById('task-result');
+  const solBtn = document.getElementById('show-solution');
+  const sol = document.getElementById('solution');
+  res.hidden = solBtn.hidden = !task;
+  sol.hidden = true;
+  let refMoves = [];
+  if (task) {
+    refMoves = runProgram(task.solution, task.mode).moves;
+    const cmp = comparePaths(moves, refMoves, task.mode, task.stock);
+    const msg = nErr ? 'Сначала исправь ошибки в программе'
+      : !moves.some(m => m.type !== 'rapid') ? 'Резания нет'
+      : cmp.extraLine ? `Строка ${cmp.extraLine}: резание идёт не по контуру задания`
+      : cmp.missing ? 'Контур обработан не полностью'
+      : '';
+    res.textContent = msg || 'Задание выполнено';
+    res.className = msg ? '' : 'ok';
+    if (!msg) markDone(task.id);
+    sol.textContent = task.solution;
+  }
+  drawPlot(moves, refMoves);
   const nWarn = issues.length - nErr;
   const sum = document.getElementById('summary');
   sum.textContent = issues.length ? `Ошибок: ${nErr}, предупреждений: ${nWarn}` : 'Замечаний нет';
@@ -198,6 +229,77 @@ function showView(v) {
   if (v === 'plot') checkProgram();
 }
 document.querySelectorAll('#view button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
+
+document.getElementById('show-solution').addEventListener('click', () => {
+  document.getElementById('solution').hidden = false;
+});
+
+// Задания (файл tasks.json) и отметки о выполнении
+let tasks = [];
+let done = [];
+try { done = JSON.parse(localStorage.getItem('cnc.done')) || []; } catch {}
+
+function markDone(id) {
+  if (done.includes(id)) return;
+  done.push(id);
+  try { localStorage.setItem('cnc.done', JSON.stringify(done)); } catch {}
+  renderTasks();
+}
+
+function renderTasks() {
+  const ul = document.getElementById('task-list');
+  ul.textContent = '';
+  for (const t of tasks) {
+    const li = document.createElement('li');
+    const mark = document.createElement('span');
+    mark.className = 'mark';
+    mark.textContent = done.includes(t.id) ? '✓' : '';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = t.title;
+    const kind = document.createElement('span');
+    kind.className = 'kind';
+    kind.textContent = t.mode === 'mill' ? 'фрезер' : 'токарка';
+    li.append(mark, name, kind);
+    li.addEventListener('click', () => openTask(t));
+    ul.append(li);
+  }
+  document.getElementById('task-count').textContent =
+    `Выполнено ${tasks.filter(t => done.includes(t.id)).length} из ${tasks.length}`;
+}
+
+function openTask(t) {
+  task = t;
+  mode = t.mode;
+  document.getElementById('task-title').textContent = t.title;
+  document.getElementById('task-text').textContent = t.text;
+  document.getElementById('task-text').hidden = false;
+  document.getElementById('task-box').hidden = false;
+  loadDraft();
+  applyMode();
+  showView('code');
+  showTab('editor');
+}
+
+// Нажатие на название задания сворачивает его текст: больше места под код
+document.getElementById('task-title').addEventListener('click', () => {
+  const p = document.getElementById('task-text');
+  p.hidden = !p.hidden;
+});
+
+document.getElementById('task-close').addEventListener('click', () => {
+  task = null;
+  try { mode = localStorage.getItem('cnc.mode') === 'lathe' ? 'lathe' : 'mill'; } catch {}
+  document.getElementById('task-box').hidden = true;
+  loadDraft();
+  applyMode();
+  showView('code');
+});
+
+fetch('tasks.json')
+  .then(r => r.json())
+  .then(list => { tasks = list; renderTasks(); })
+  .catch(() => { document.getElementById('task-count').textContent = 'Не удалось загрузить задания'; });
 
 // Значок "в сети / офлайн"
 const net = document.getElementById('net');

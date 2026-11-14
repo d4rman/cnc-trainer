@@ -1,4 +1,4 @@
-const VERSION = '1.0';
+const VERSION = '1.1';
 document.getElementById('ver').textContent = VERSION;
 
 // Переключение вкладок
@@ -35,13 +35,13 @@ code.addEventListener('input', () => {
 const NUM_KEYS = ['7', '8', '9', '.', '⌫', 'ABC', '4', '5', '6', '-', '␣', ';', '1', '2', '3', '0', '↵'];
 const KEY_ROWS = {
   mill: [
-    ['scroll', ['G00', 'G01', 'G02', 'G03', 'G90', 'G91', 'G54', 'G40', 'G41', 'G42', 'G43', 'G28',
+    ['scroll', ['S/F', 'G00', 'G01', 'G02', 'G03', 'G90', 'G91', 'G54', 'G40', 'G41', 'G42', 'G43', 'G28',
                 'M03', 'M04', 'M05', 'M06', 'M08', 'M09', 'M30']],
     ['c7', ['X', 'Y', 'Z', 'I', 'J', 'K', 'R', 'F', 'S', 'T', 'H', 'D', 'G', 'M']],
     ['c6', NUM_KEYS],
   ],
   lathe: [
-    ['scroll', ['G00', 'G01', 'G02', 'G03', 'G50', 'G96', 'G97', 'G98', 'G99', 'G40', 'G41', 'G42', 'G28',
+    ['scroll', ['S/F', 'G00', 'G01', 'G02', 'G03', 'G50', 'G96', 'G97', 'G98', 'G99', 'G40', 'G41', 'G42', 'G28',
                 'M03', 'M04', 'M05', 'M08', 'M09', 'M30']],
     ['c7', ['X', 'Z', 'U', 'W', 'I', 'K', 'R', 'F', 'S', 'T', 'P', 'Q', 'G', 'M']],
     ['c6', NUM_KEYS],
@@ -50,6 +50,7 @@ const KEY_ROWS = {
 
 function pressKey(k, btn) {
   const s = code.selectionStart, e = code.selectionEnd;
+  if (k === 'S/F') { openFeeds(); return; }
   if (k === 'ABC') {
     // Переключение на обычную клавиатуру телефона и обратно
     const sys = code.inputMode === 'none';
@@ -84,6 +85,7 @@ function buildKeys() {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = k;
+      if (k === 'S/F') b.className = 'special';
       row.append(b);
     }
     keys.append(row);
@@ -427,6 +429,50 @@ document.getElementById('quiz-go').addEventListener('click', () => {
 document.getElementById('quiz-next').addEventListener('click', newQuiz);
 showScore();
 newQuiz();
+
+// Подбор режимов (кнопка S/F на клавиатуре): материал + инструмент -> S и F, вставка кадров в программу
+const feedsDlg = document.getElementById('feeds');
+const FD_FIELDS = ['mat', 'tool', 'toolmat', 'd', 'z', 'op', 'max'];
+const fd = id => document.getElementById('fd-' + id);
+MATERIALS.forEach((m, i) => fd('mat').add(new Option(m.name, i)));
+let feedsResult = null;
+
+function updateFeeds() {
+  const drill = mode === 'mill' && fd('tool').value === 'drill';
+  fd('z-row').hidden = mode !== 'mill' || drill;
+  fd('op-row').hidden = drill;
+  feedsResult = suggestFeeds({
+    mode, mat: +fd('mat').value, tool: fd('tool').value, toolMat: fd('toolmat').value,
+    d: toNum(fd('d').value), z: toNum(fd('z').value), op: fd('op').value, maxRpm: toNum(fd('max').value),
+  });
+  fd('out').textContent = feedsResult.error || feedsResult.text.join('\n') + '\n\n' + feedsResult.lines.join('\n');
+  fd('insert').disabled = !!feedsResult.error;
+  // Запоминаем выбор отдельно для фрезера и токарки
+  const saved = {};
+  FD_FIELDS.forEach(f => { saved[f] = fd(f).value; });
+  try { localStorage.setItem('cnc.feeds.' + mode, JSON.stringify(saved)); } catch {}
+}
+
+function openFeeds() {
+  feedsDlg.querySelectorAll('.mill-only').forEach(el => { el.hidden = mode !== 'mill'; });
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('cnc.feeds.' + mode)) || {}; } catch {}
+  const defaults = { mat: '0', tool: 'end', toolmat: 'carbide', d: '10', z: '4', op: 'rough', max: mode === 'mill' ? '8000' : '3000' };
+  FD_FIELDS.forEach(f => { fd(f).value = saved[f] ?? defaults[f]; });
+  updateFeeds();
+  feedsDlg.showModal();
+}
+FD_FIELDS.forEach(f => fd(f).addEventListener('input', updateFeeds));
+fd('close').addEventListener('click', () => feedsDlg.close());
+fd('insert').addEventListener('click', () => {
+  if (!feedsResult || feedsResult.error) return;
+  const s = code.selectionStart;
+  // Кадры ставим с новой строки
+  const before = s > 0 && code.value[s - 1] !== '\n' ? '\n' : '';
+  code.setRangeText(before + feedsResult.lines.join('\n') + '\n', s, code.selectionEnd, 'end');
+  saveDraft();
+  feedsDlg.close();
+});
 
 // Мои программы
 let programs = [];

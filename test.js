@@ -121,4 +121,25 @@ assert.match(warns(runMill('G00 X0 Y0\nG00 Z-5\nM30'))[0].msg, /ниже Z0/);
 // Отвод вверх из материала на G00 это нормально
 assert.deepStrictEqual(runMill('G00 X0 Y0\nM03 S5\nG01 Z-5 F50\nG00 Z5\nM30').issues, []);
 
+// Подбор режимов
+const { suggestFeeds } = require('./feeds.js');
+// Сталь, твердосплавная концевая D10 z4, черновая: n = 1000*150/(pi*10) = 4775 -> 4770; F = 4770*4*0.05 = 954 -> 955
+let s = suggestFeeds({ mode: 'mill', mat: 0, tool: 'end', toolMat: 'carbide', d: 10, z: 4, op: 'rough', maxRpm: 8000 });
+assert.deepStrictEqual(s.lines, ['S4770 M03 F955;']);
+// Предел станка
+s = suggestFeeds({ mode: 'mill', mat: 4, tool: 'end', toolMat: 'carbide', d: 6, z: 2, op: 'rough', maxRpm: 8000 });
+assert.deepStrictEqual(s.lines, ['S8000 M03 F960;']);
+assert.match(s.text[1], /предел станка/);
+// Сверло из быстрореза D8 по стали: n = 1000*24/(pi*8) = 955 -> 950; f = 0.02*8*0.8 = 0.128; F = 121.6 -> 120
+assert.deepStrictEqual(suggestFeeds({ mode: 'mill', mat: 0, tool: 'drill', toolMat: 'hss', d: 8, op: 'rough', maxRpm: 8000 }).lines, ['S950 M03 F120;']);
+// Токарка, сталь, чистовая: Vc 180*1.25 = 225, f 0.25*0.5 = 0.13 (округление 0.125)
+s = suggestFeeds({ mode: 'lathe', mat: 0, toolMat: 'carbide', op: 'finish', maxRpm: 3000 });
+assert.deepStrictEqual(s.lines, ['G50 S3000;', 'G96 S225 M03;', 'G99 F0.13;']);
+// Вставленные кадры проходят разбор без замечаний
+assert.deepStrictEqual(gcode.runProgram(s.lines.join('\n') + '\nM30;', 'lathe').issues, []);
+assert.deepStrictEqual(gcode.runProgram('S4770 M03 F955;\nM30;', 'mill').issues, []);
+// Неполные данные
+assert.ok(suggestFeeds({ mode: 'mill', mat: 0, tool: 'end', toolMat: 'carbide', d: NaN, z: 4, op: 'rough', maxRpm: 8000 }).error);
+assert.ok(suggestFeeds({ mode: 'mill', mat: 0, tool: 'end', toolMat: 'carbide', d: 10, z: NaN, op: 'rough', maxRpm: 8000 }).error);
+
 console.log('все проверки прошли');

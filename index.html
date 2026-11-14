@@ -98,7 +98,39 @@
   <button data-tab="data">Данные</button>
 </nav>
 
+<dialog id="feeds">
+  <h2>Подбор режимов</h2>
+  <label>Материал детали<select id="fd-mat"></select></label>
+  <label class="mill-only">Инструмент
+    <select id="fd-tool">
+      <option value="end">Концевая фреза</option>
+      <option value="face">Торцевая фреза</option>
+      <option value="drill">Сверло</option>
+    </select>
+  </label>
+  <label>Материал инструмента
+    <select id="fd-toolmat">
+      <option value="carbide">Твёрдый сплав</option>
+      <option value="hss">Быстрорез (HSS)</option>
+    </select>
+  </label>
+  <label class="mill-only">Диаметр инструмента, мм<input id="fd-d" type="text" inputmode="decimal" autocomplete="off"></label>
+  <label class="mill-only" id="fd-z-row">Число зубьев<input id="fd-z" type="text" inputmode="numeric" autocomplete="off"></label>
+  <label id="fd-op-row">Операция
+    <select id="fd-op">
+      <option value="rough">Черновая</option>
+      <option value="finish">Чистовая</option>
+    </select>
+  </label>
+  <label>Макс. обороты станка<input id="fd-max" type="text" inputmode="numeric" autocomplete="off"></label>
+  <pre id="fd-out"></pre>
+  <p class="muted small">Стартовые значения из справочников. Сверяй с каталогом своего инструмента.</p>
+  <button id="fd-insert" class="big">Вставить в программу</button>
+  <button id="fd-close" class="ghost wide">Закрыть</button>
+</dialog>
+
 <script src="gcode.js"></script>
+<script src="feeds.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -22,8 +22,23 @@
 
 <main>
   <section id="tab-editor" class="tab active">
-    <textarea id="code" inputmode="none" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Пиши программу кнопками ниже"></textarea>
-    <div id="keys"></div>
+    <div class="seg" id="view">
+      <button data-view="code" class="active">Код</button>
+      <button data-view="plot">Проверить</button>
+    </div>
+    <div id="view-code">
+      <textarea id="code" inputmode="none" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Пиши программу кнопками ниже"></textarea>
+      <div id="keys"></div>
+    </div>
+    <div id="view-plot" hidden>
+      <canvas id="plot"></canvas>
+      <div class="legend">
+        <span class="rapid">G00</span><span class="feed">G01</span><span class="arc">G02/03</span><span class="muted">вид сверху, XY</span>
+      </div>
+      <p id="extent" class="muted"></p>
+      <p id="summary"></p>
+      <ul id="issues"></ul>
+    </div>
   </section>
   <section id="tab-tasks" class="tab">
     <h2>Задания</h2>
@@ -49,6 +64,7 @@
   <button data-tab="data">Данные</button>
 </nav>
 
+<script src="gcode.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

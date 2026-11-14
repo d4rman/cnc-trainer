@@ -1,4 +1,4 @@
-const VERSION = '0.3';
+const VERSION = '0.4';
 document.getElementById('ver').textContent = VERSION;
 
 // Переключение вкладок
@@ -74,6 +74,90 @@ keys.addEventListener('pointerup', e => {
   const b = e.target.closest('button');
   if (b) pressKey(b.textContent, b);
 });
+
+// Проверка программы и рисунок траектории
+const COLORS = { rapid: '#7d8ba1', feed: '#3ecf8e', arc: '#f5a623' };
+
+function drawPlot(moves) {
+  const cv = document.getElementById('plot');
+  const dpr = devicePixelRatio || 1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext('2d');
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, W, H);
+
+  // Границы: вся траектория плюс ноль детали
+  let x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+  for (const m of moves) for (const [x, y] of m.pts) {
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+  }
+  const pad = 24;
+  const k = Math.min((W - 2 * pad) / (x1 - x0 || 1), (H - 2 * pad) / (y1 - y0 || 1));
+  const px = x => (W - (x1 - x0) * k) / 2 + (x - x0) * k;
+  const py = y => (H + (y1 - y0) * k) / 2 - (y - y0) * k;   // Y вверх, как на чертеже
+
+  // Оси через ноль детали
+  g.strokeStyle = '#243044'; g.lineWidth = 1; g.setLineDash([]);
+  g.beginPath(); g.moveTo(0, py(0)); g.lineTo(W, py(0)); g.moveTo(px(0), 0); g.lineTo(px(0), H); g.stroke();
+  g.fillStyle = '#8a96a8'; g.font = '12px sans-serif';
+  g.fillText('X', W - 14, py(0) - 6); g.fillText('Y', px(0) + 6, 14);
+
+  g.lineWidth = 2; g.lineJoin = 'round';
+  for (const m of moves) {
+    g.strokeStyle = COLORS[m.type];
+    g.setLineDash(m.type === 'rapid' ? [5, 5] : []);
+    g.beginPath();
+    m.pts.forEach(([x, y], i) => i ? g.lineTo(px(x), py(y)) : g.moveTo(px(x), py(y)));
+    g.stroke();
+  }
+  // Конец траектории: где остановился инструмент
+  if (moves.length) {
+    const [x, y] = moves[moves.length - 1].pts.at(-1);
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(px(x), py(y), 4, 0, 7); g.fill();
+  }
+  document.getElementById('extent').textContent = moves.length
+    ? `X от ${+x0.toFixed(3)} до ${+x1.toFixed(3)}, Y от ${+y0.toFixed(3)} до ${+y1.toFixed(3)}`
+    : 'Движений нет';
+}
+
+function checkProgram() {
+  const { moves, issues } = runMill(code.value);
+  drawPlot(moves);
+  const nErr = issues.filter(i => i.level === 'error').length;
+  const nWarn = issues.length - nErr;
+  const sum = document.getElementById('summary');
+  sum.textContent = issues.length ? `Ошибок: ${nErr}, предупреждений: ${nWarn}` : 'Замечаний нет';
+  sum.className = nErr ? 'bad' : 'ok';
+  const ul = document.getElementById('issues');
+  ul.textContent = '';
+  for (const it of issues) {
+    const li = document.createElement('li');
+    li.className = it.level;
+    const b = document.createElement('b');
+    b.textContent = 'Строка ' + it.line;
+    li.append(b, it.msg);
+    li.addEventListener('click', () => { showView('code'); gotoLine(it.line); });
+    ul.append(li);
+  }
+}
+
+// Нажатие на замечание: открыть код и выделить эту строку
+function gotoLine(n) {
+  const ls = code.value.split('\n');
+  const start = ls.slice(0, n - 1).reduce((a, l) => a + l.length + 1, 0);
+  code.focus();
+  code.setSelectionRange(start, start + (ls[n - 1] || '').length);
+  code.scrollTop = Math.max(0, (n - 3) * 27);   // 27 = высота строки в поле
+}
+
+function showView(v) {
+  document.querySelectorAll('#view button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  document.getElementById('view-code').hidden = v !== 'code';
+  document.getElementById('view-plot').hidden = v !== 'plot';
+  if (v === 'plot') checkProgram();
+}
+document.querySelectorAll('#view button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
 
 // Значок "в сети / офлайн"
 const net = document.getElementById('net');

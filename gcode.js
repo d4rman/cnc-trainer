@@ -1,9 +1,10 @@
 // Разбор и проверка программы Fanuc.
 // mode 'mill':  фрезерный, плоскость G17. Рисунок: X вправо, Y вверх.
-//               Циклы сверления G81, G82, G83, G73 (только G90), отмена G80, возврат G98/G99.
+//               Циклы G81, G82, G83, G73, G84, G74, G85, G86 (только G90), отмена G80, возврат G98/G99.
 // mode 'lathe': токарный (G-коды системы A), X в диаметре, U/W приращения. Рисунок: Z вправо, X (радиус) вверх,
 //               G02 на рисунке идёт по часовой (резец сзади, как в учебниках).
-//               Циклы G71 (тип I, два кадра) и G70.
+//               Циклы G71 (тип I, два кадра), G70, G76 (два кадра), G90, G92, G94 (без конуса).
+// Подпрограммы: M98 P.. (O-номер в том же тексте после M30), возврат M99.
 // X10 без точки рисуется как 10 мм, но считается ошибкой (на станках пользователя точка обязательна).
 // Возвращает { moves, issues }:
 //   moves:  { type: 'rapid' | 'feed' | 'arc', pts: [[h, v, z], ...], line }  h, v: координаты на рисунке
@@ -11,7 +12,7 @@
 
 const OK_G_MILL = new Set([17, 21, 40, 41, 42, 43, 49, 54, 55, 56, 57, 58, 59, 94, 95]);
 const OK_G_LATHE = new Set([18, 21, 40, 41, 42, 54, 55, 56, 57, 58, 59, 80, 97, 98, 99]);
-const ADDRESSES = 'XYZUWIJKRFSTHDPQNO';
+const ADDRESSES = 'XYZUWIJKRFSTHDPQNOL';
 const num = n => String(+n.toFixed(3));
 
 function runProgram(text, mode) {
@@ -62,7 +63,8 @@ function runProgram(text, mode) {
   // 2. Выполнение
   // x, y: положение на рисунке (фрезер: X, Y; токарка: Z, радиус). z: только фрезер, 100 = "где-то высоко"
   const st = { x: 0, y: 0, z: L ? 0 : 100, motion: 0, abs: true, f: null, s: null, spindle: false, clamp: false,
-               placed: false, ended: false, cycle: null, ret: 98, g71: null };
+               placed: false, ended: false, cycle: null, ret: 98, g71: null,
+               lc: null, css: false, callSub: null, retSub: false };
   let sink = moves;   // куда складываются ходы (при чтении контура G71: во временный список)
   const P = (type, a, b, line) => sink.push({ type, pts: [a, b], line });
   const cutChecks = line => {
@@ -172,8 +174,63 @@ function runProgram(text, mode) {
     }
     P('feed', [tx, ty, top], [tx, ty, c.z], line);
     const back = st.ret === 99 ? c.r : Math.max(c.init, c.r);   // G99: на R, G98: на исходную высоту
-    P('rapid', [tx, ty, c.z], [tx, ty, back], line);
+    if (c.type === 84 || c.type === 74 || c.type === 85) {
+      // Метчик и развёртка выходят на рабочей подаче
+      P('feed', [tx, ty, c.z], [tx, ty, c.r], line);
+      if (back > c.r) P('rapid', [tx, ty, c.r], [tx, ty, back], line);
+    } else P('rapid', [tx, ty, c.z], [tx, ty, back], line);
     st.x = tx; st.y = ty; st.z = back; st.placed = true;
+  }
+
+  // G90, G92 (вдоль Z) и G94 (по торцу): один проход "коробочкой" с возвратом в начальную точку
+  function box(b) {
+    const { line, w } = b, c = st.lc;
+    if (!st.placed) { err(line, 'Перед циклом G' + c.type + ' подведи инструмент в начальную точку'); return; }
+    if ('R' in w && w.R !== 0) { err(line, 'Конус (R) в цикле G' + c.type + ' пока не поддерживается'); return; }
+    cutChecks(line);
+    if (c.type === 92 && st.css) warn(line, 'Резьбу режут на постоянных оборотах (G97), а не на G96');
+    const zs = st.x, rs = st.y;
+    const tz = c.z = 'Z' in w ? w.Z : 'W' in w ? zs + w.W : c.z;
+    const tr = c.r = 'X' in w ? w.X / 2 : 'U' in w ? rs + w.U / 2 : c.r;
+    if (c.type === 94) {
+      P('rapid', [zs, rs, 0], [tz, rs, 0], line);
+      P('feed', [tz, rs, 0], [tz, tr, 0], line);
+      P('feed', [tz, tr, 0], [zs, tr, 0], line);
+      P('rapid', [zs, tr, 0], [zs, rs, 0], line);
+    } else {
+      P('rapid', [zs, rs, 0], [zs, tr, 0], line);
+      P('feed', [zs, tr, 0], [tz, tr, 0], line);
+      P(c.type === 92 ? 'rapid' : 'feed', [tz, tr, 0], [tz, rs, 0], line);   // резьба: выход на быстром
+      P('rapid', [tz, rs, 0], [zs, rs, 0], line);
+    }
+  }
+
+  // G76: резьба за несколько проходов. Глубина n-го прохода = Q * корень из n, пока не наберётся высота P
+  function doG76(b) {
+    const { line, w } = b;
+    if (!('X' in w || 'U' in w) || !('Z' in w || 'W' in w)) return;   // первый кадр: только настройки
+    if (!st.placed) { err(line, 'Перед G76 подведи инструмент в начальную точку (G00 X.. Z..)'); return; }
+    const zs = st.x, rs = st.y;
+    const tz = 'Z' in w ? w.Z : zs + w.W, rx = 'X' in w ? w.X / 2 : rs + w.U / 2;
+    const k = b.nodot.has('P') ? w.P / 1000 : w.P, dq = b.nodot.has('Q') ? w.Q / 1000 : w.Q;   // без точки: микроны
+    if (!(k > 0)) { err(line, 'В G76 нужна высота резьбы P (в микронах, например P1534)'); return; }
+    if (!(dq > 0)) { err(line, 'В G76 нужна глубина первого прохода Q (в микронах, например Q400)'); return; }
+    if (!('F' in w)) { err(line, 'В G76 нужен шаг резьбы F'); return; }
+    if ('R' in w && w.R !== 0) { err(line, 'Конусная резьба (R) в G76 пока не поддерживается'); return; }
+    const dir = Math.sign(rs - rx);   // +1 наружная резьба, -1 внутренняя
+    if (!dir) { err(line, 'Начальная точка G76 должна быть в стороне от резьбы по X'); return; }
+    cutChecks(line);
+    if (st.css) warn(line, 'Резьбу режут на постоянных оборотах (G97), а не на G96');
+    if (k / w.F < 0.5 || k / w.F > 0.7) warn(line, 'Высота резьбы P' + num(k) + ' не похожа на шаг F' + num(w.F) + ' (для метрической около 0.61 шага)');
+    for (let n = 1; n <= 500; n++) {
+      const dn = Math.min(k, dq * Math.sqrt(n));
+      const r = rx + dir * (k - dn);
+      P('rapid', [zs, rs, 0], [zs, r, 0], line);
+      P('feed', [zs, r, 0], [tz, r, 0], line);
+      P('rapid', [tz, r, 0], [tz, rs, 0], line);
+      P('rapid', [tz, rs, 0], [zs, rs, 0], line);
+      if (dn >= k - 1e-9) break;
+    }
   }
 
   let depth = 0;
@@ -186,11 +243,11 @@ function runProgram(text, mode) {
 
   function execBlock(b, i) {
     const { line, w } = b;
-    let motionInBlock = null, skipMove = false, g50 = false, g96 = false, g70 = false, g71 = false, cyc = null;
+    let motionInBlock = null, skipMove = false, g50 = false, g96 = false, g70 = false, g71 = false, g76 = false, cyc = null, lcyc = null;
     const setMotion = v => {
       if (motionInBlock !== null) err(line, 'Два G-кода движения в одном кадре');
       motionInBlock = v; st.motion = v;
-      st.cycle = null;   // G00..G03 отменяют цикл сверления
+      st.cycle = null; st.lc = null;   // G00..G03 отменяют цикл
     };
     for (const v of b.g) {
       if (v === 0 || v === 1 || v === 2 || v === 3) setMotion(v);
@@ -199,19 +256,22 @@ function runProgram(text, mode) {
       else if (L) {
         if (v === 32) setMotion(1);                         // резьба одним проходом: рисуем как G01
         else if (v === 50) { g50 = true; skipMove = true; }
-        else if (v === 96) g96 = true;
+        else if (v === 96) { g96 = true; st.css = true; }
+        else if (v === 97) st.css = false;
         else if (v === 71) g71 = true;
         else if (v === 70) g70 = true;
-        else if ((v >= 72 && v <= 76) || v === 90 || v === 92 || v === 94) { err(line, 'Цикл G' + v + ' пока не поддерживается'); skipMove = true; }
+        else if (v === 76) g76 = true;
+        else if (v === 90 || v === 92 || v === 94) lcyc = v;
+        else if (v >= 72 && v <= 75) { err(line, 'Цикл G' + v + ' пока не поддерживается'); skipMove = true; }
         else if (v === 17 || v === 19) err(line, 'На токарном плоскость G18, G' + v + ' не подходит');
         else if (!OK_G_LATHE.has(v)) err(line, 'Неизвестный код G' + v);
       } else {
         if (v === 90) st.abs = true;
         else if (v === 91) st.abs = false;
-        else if (v === 81 || v === 82 || v === 83 || v === 73) cyc = v;
+        else if ([81, 82, 83, 73, 84, 74, 85, 86].includes(v)) cyc = v;
         else if (v === 80) st.cycle = null;
         else if (v === 98 || v === 99) st.ret = v;
-        else if (v === 74 || v === 76 || (v >= 84 && v <= 89)) { err(line, 'Цикл G' + v + ' пока не поддерживается'); skipMove = true; }
+        else if (v === 76 || (v >= 87 && v <= 89)) { err(line, 'Цикл G' + v + ' пока не поддерживается'); skipMove = true; }
         else if (v === 18 || v === 19) err(line, 'Плоскость G' + v + ' пока не поддерживается, только G17');
         else if (!OK_G_MILL.has(v)) err(line, 'Неизвестный код G' + v);
       }
@@ -226,11 +286,28 @@ function runProgram(text, mode) {
         if (st.s === null) warn(line, 'Шпиндель включён, а обороты S не заданы');
       } else if (m === 5) st.spindle = false;
       else if (m === 2 || m === 30) st.ended = true;
-      else if (m === 98 || m === 99) err(line, 'Подпрограммы (M98/M99) пока не поддерживаются');
+      else if (m === 99) st.retSub = true;
+      else if (m === 98) {
+        // M98 P1000 L3 или M98 P31000: три раза O1000
+        if (!(w.P > 0)) err(line, 'В M98 нужен номер подпрограммы P');
+        else st.callSub = w.P >= 10000 ? { prog: w.P % 10000, reps: Math.floor(w.P / 10000) } : { prog: w.P, reps: w.L || 1 };
+      }
     }
 
     if (g71) return doG71(b, i);
     if (g70) return void doG70(b, i);
+    if (g76) return void doG76(b);
+
+    // Токарные циклы одного прохода: кадр с циклом задаёт его, дальше каждый кадр с X или Z повторяет
+    if (lcyc) {
+      if (!('X' in w || 'U' in w) || !('Z' in w || 'W' in w)) { err(line, 'В цикле G' + lcyc + ' нужны X и Z'); return; }
+      st.lc = { type: lcyc, z: st.x, r: st.y };
+      return void box(b);
+    }
+    if (st.lc) {
+      if ('X' in w || 'U' in w || 'Z' in w || 'W' in w) box(b);
+      return;
+    }
 
     // Циклы сверления: кадр с циклом задаёт его, дальше каждый кадр с X или Y сверлит ещё отверстие
     if (cyc) {
@@ -332,10 +409,32 @@ function runProgram(text, mode) {
     if (hasXY) st.placed = true;
   }
 
+  const stack = [];   // вызовы подпрограмм: { ret: куда вернуться, at: начало подпрограммы, reps: сколько раз осталось }
+  let steps = 0;
   for (let i = 0; i < blocks.length; i++) {
-    if (st.ended) { warn(blocks[i].line, 'Кадр после M30 не выполняется'); break; }
+    const { line } = blocks[i];
+    if (st.ended) {
+      // После M30 обычно лежат подпрограммы (кадр с O-номером), это не ошибка
+      if (!('O' in blocks[i].w)) warn(line, 'Кадр после M30 не выполняется');
+      break;
+    }
+    if (++steps > 20000) { err(line, 'Программа не заканчивается (зациклилась)'); break; }
     const jump = exec(blocks[i], i);
     if (jump !== undefined) i = jump;
+    if (st.callSub) {
+      const { prog, reps } = st.callSub;
+      st.callSub = null;
+      const at = blocks.findIndex(x => x.w.O === prog);
+      if (at < 0) err(line, 'Не найдена подпрограмма O' + prog);
+      else if (stack.length >= 4) err(line, 'Слишком глубокая вложенность подпрограмм (больше 4)');
+      else { stack.push({ ret: i, at, reps }); i = at - 1; }
+    } else if (st.retSub) {
+      st.retSub = false;
+      const top = stack[stack.length - 1];
+      if (!top) break;                        // M99 в главной программе: дальше не идём
+      if (--top.reps > 0) i = top.at - 1;
+      else { stack.pop(); i = top.ret; }
+    }
   }
 
   if (blocks.length && !st.ended) warn(lines.length, 'Нет M30 в конце программы');

@@ -88,7 +88,11 @@ assert.strictEqual(feeds(runMill('G00 X0 Y0\nS1000 M03\nG00 Z5\nG83 Z-10 R2 Q300
 assert.match(errs(runMill('G00 X0 Y0\nS1 M03\nG81 Z-5 F100\nM30'))[0].msg, /нужен R/);
 assert.match(errs(runMill('G00 X0 Y0\nS1 M03\nG83 Z-5 R2 F100\nM30'))[0].msg, /шаг Q/);
 assert.match(errs(runMill('G00 X0 Y0\nS1 M03\nG81 Z5 R2 F100\nM30'))[0].msg, /ниже плоскости R/);
-assert.match(errs(runMill('G00 X0 Y0\nS1 M03\nG84 Z-5 R2 F100\nM30'))[0].msg, /G84/);
+assert.match(errs(runMill('G00 X0 Y0\nS1 M03\nG87 Z-5 R2 F100\nM30'))[0].msg, /G87/);
+// Метчик G84 выходит на подаче: два рабочих хода, вниз и вверх
+d = runMill('G00 X0 Y0\nS300 M03\nG00 Z5\nG84 Z-12 R3 F300\nG80\nM30');
+assert.deepStrictEqual(d.issues, []);
+assert.deepStrictEqual(feeds(d).map(m => m.pts[1][2]), [-12, 3]);
 
 // G71 + G70
 const g71 = `G50 S2500
@@ -124,7 +128,36 @@ assert.match(errs(runLathe(g71.replace('N20 ', '')))[0].msg, /Не найден 
 assert.match(errs(runLathe(g71.replace('X40 Z-20', 'X40 Z-20\nX30')))[0].msg, /в одну сторону/);
 // Бесконечной рекурсии нет: G70 внутри своего контура
 assert.match(errs(runLathe('G00 X50 Z2\nN10 G70 P10 Q20\nN20 X40\nM30'))[0].msg, /отдельно/);
-assert.match(errs(runLathe('G00 X50 Z2\nG90 X40 Z-20 F0.2\nM30'))[0].msg, /G90/);
+assert.match(errs(runLathe('G00 X50 Z2\nG73 U2 R1\nM30'))[0].msg, /G73/);
+
+// Токарные циклы одного прохода: G90 по диаметру, повтор кадром с X
+d = runLathe('G50 S2000\nG96 S150 M03\nG00 X52 Z2\nG90 X46 Z-20 F0.2\nX42\nX40\nG00 X100 Z100\nM30');
+assert.deepStrictEqual(d.issues, []);
+assert.deepStrictEqual(feeds(d).filter(m => m.line === 5).map(m => m.pts), [[[2, 21, 0], [-20, 21, 0]], [[-20, 21, 0], [-20, 26, 0]]]);
+assert.strictEqual(feeds(d).length, 6);
+// G94: подрезка, первый рабочий ход идёт по X
+d = runLathe('G50 S2000\nG96 S150 M03\nG00 X52 Z2\nG94 X20 Z-2 F0.15\nG00 X100 Z100\nM30');
+assert.deepStrictEqual(feeds(d)[0].pts, [[-2, 26, 0], [-2, 10, 0]]);
+// G76: M20x2.5, высота 1.534, первый проход 0.4: 15 проходов, последний на диаметре впадин
+const g76 = 'G97 S500 M03\nG00 X24 Z5\nG76 P010060 Q100 R0.05\nG76 X16.933 Z-25 P1534 Q400 F2.5\nG00 X100 Z100\nM30';
+d = runLathe(g76);
+assert.deepStrictEqual(d.issues, []);
+assert.strictEqual(feeds(d).length, 15);
+assert.ok(Math.abs(feeds(d)[0].pts[0][1] - 9.6005) < 1e-9);
+assert.ok(Math.abs(feeds(d)[14].pts[0][1] - 8.4665) < 1e-9);
+assert.match(warns(runLathe(g76.replace('G97 S500', 'G50 S2000\nG96 S100')))[0].msg, /G97/);
+assert.match(warns(runLathe(g76.replace('P1534', 'P500')))[0].msg, /не похожа на шаг/);
+assert.match(errs(runLathe(g76.replace(' Q400', '')))[0].msg, /первого прохода Q/);
+
+// Подпрограммы
+const sub = 'O0001\nG90 G54 G00 X10 Y10\nS1200 M03\nG00 Z2\nM98 P1000\nG00 X10 Y25\nM98 P1000\nG00 Z50\nM05\nM30\nO1000\nG91 G01 Z-4 F100\nX30\nG00 Z4\nG90\nM99';
+d = runMill(sub);
+assert.deepStrictEqual(d.issues, []);
+assert.deepStrictEqual(feeds(d).map(m => m.pts[1]), [[10, 10, -2], [40, 10, -2], [10, 25, -2], [40, 25, -2]]);
+// M98 P31000: три повтора
+assert.strictEqual(feeds(runMill('G00 X0 Y0\nS1 M03\nG01 Z-1 F50\nM98 P31000\nM30\nO1000\nG91 G01 X10\nG90\nM99')).length, 4);
+assert.match(errs(runMill('G00 X0 Y0\nM98 P2000\nM30'))[0].msg, /Не найдена подпрограмма O2000/);
+assert.match(errs(runMill('M98 P1000\nM30\nO1000\nM98 P1000\nM99'))[0].msg, /вложенность/);
 function errs(r) { return r.issues.filter(i => i.level === 'error'); }
 function warns(r) { return r.issues.filter(i => i.level === 'warn'); }
 

@@ -1,4 +1,4 @@
-const VERSION = '1.2';
+const VERSION = '1.3';
 document.getElementById('ver').textContent = VERSION;
 
 // Переключение вкладок
@@ -36,14 +36,14 @@ const NUM_KEYS = ['7', '8', '9', '.', '⌫', 'ABC', '4', '5', '6', '-', '␣', '
 const KEY_ROWS = {
   mill: [
     ['scroll', ['S/F', 'G00', 'G01', 'G02', 'G03', 'G90', 'G91', 'G54', 'G40', 'G41', 'G42', 'G43', 'G28',
-                'M03', 'M04', 'M05', 'M06', 'M08', 'M09', 'M30']],
-    ['c7', ['X', 'Y', 'Z', 'I', 'J', 'K', 'R', 'F', 'S', 'T', 'H', 'D', 'G', 'M']],
+                'G81', 'G83', 'G80', 'G98', 'G99', 'M03', 'M04', 'M05', 'M06', 'M08', 'M09', 'M30']],
+    ['c8', ['X', 'Y', 'Z', 'I', 'J', 'K', 'R', 'Q', 'F', 'S', 'T', 'H', 'D', 'P', 'G', 'M']],
     ['c6', NUM_KEYS],
   ],
   lathe: [
-    ['scroll', ['S/F', 'G00', 'G01', 'G02', 'G03', 'G50', 'G96', 'G97', 'G98', 'G99', 'G40', 'G41', 'G42', 'G28',
+    ['scroll', ['S/F', 'G00', 'G01', 'G02', 'G03', 'G50', 'G96', 'G97', 'G98', 'G99', 'G71', 'G70', 'G40', 'G41', 'G42', 'G28',
                 'M03', 'M04', 'M05', 'M08', 'M09', 'M30']],
-    ['c7', ['X', 'Z', 'U', 'W', 'I', 'K', 'R', 'F', 'S', 'T', 'P', 'Q', 'G', 'M']],
+    ['c8', ['X', 'Z', 'U', 'W', 'I', 'K', 'R', 'N', 'F', 'S', 'T', 'P', 'Q', 'G', 'M', 'O']],
     ['c6', NUM_KEYS],
   ],
 };
@@ -149,8 +149,12 @@ function drawPlot(moves, refMoves = []) {
 
   // Контур задания: широкая бледная линия под траекторией
   g.lineJoin = 'round'; g.lineCap = 'round';
+  // Вертикальный рабочий ход (сверление, врезание) сверху выглядит точкой: рисуем кружок
+  const isHole = m => !lathe && m.type !== 'rapid' && m.pts.every(p => p[0] === m.pts[0][0] && p[1] === m.pts[0][1]);
+  const hole = (m, r) => { g.beginPath(); g.arc(px(m.pts[0][0]), py(m.pts[0][1]), r, 0, 7); g.stroke(); };
   g.strokeStyle = 'rgba(255,255,255,0.2)'; g.lineWidth = 8;
   for (const m of refCuts) {
+    if (isHole(m)) { g.lineWidth = 3; hole(m, 9); g.lineWidth = 8; continue; }
     g.beginPath();
     m.pts.forEach(([x, y], i) => i ? g.lineTo(px(x), py(y)) : g.moveTo(px(x), py(y)));
     g.stroke();
@@ -160,6 +164,7 @@ function drawPlot(moves, refMoves = []) {
   for (const m of moves) {
     g.strokeStyle = COLORS[m.type];
     g.setLineDash(m.type === 'rapid' ? [5, 5] : []);
+    if (isHole(m)) { hole(m, 5); continue; }
     g.beginPath();
     m.pts.forEach(([x, y], i) => i ? g.lineTo(px(x), py(y)) : g.moveTo(px(x), py(y)));
     g.stroke();

@@ -66,7 +66,64 @@ t = runLathe('G00 X40 Z0\nM03 S500\nG03 X50 Z-5 I0 K-5 F0.2\nM30');
 assert.deepStrictEqual(t.issues, []);
 // Токарные проверки
 assert.match(warns(runLathe('G96 S150 M03\nM30'))[0].msg, /G50/);
-assert.match(errs(runLathe('G00 X50 Z2\nG71 U2 R1\nM30'))[0].msg, /G71/);
+assert.match(errs(runLathe('G00 X50 Z2\nG72 W2 R1\nM30'))[0].msg, /G72/);
+
+// Циклы сверления
+const feeds = r => r.moves.filter(m => m.type === 'feed');
+let d = runMill('G90 G54 G00 X10 Y10\nS1000 M03\nG43 Z50 H01\nG99 G81 Z-10 R2 F100\nX30\nG98 Y30\nG80\nG00 Z100\nM30');
+assert.deepStrictEqual(d.issues, []);
+assert.strictEqual(feeds(d).length, 3);
+assert.deepStrictEqual(feeds(d)[1].pts, [[30, 10, 2], [30, 10, -10]]);
+// G99 оставляет на R, G98 возвращает на исходную высоту (в момент цикла инструмент был на Z50)
+assert.deepStrictEqual(d.moves.filter(m => m.line === 5).pop().pts[1], [30, 10, 2]);
+assert.deepStrictEqual(d.moves.filter(m => m.line === 6).pop().pts[1], [30, 30, 50]);
+// После G80 кадр с X больше не сверлит
+assert.strictEqual(feeds(runMill('G00 X0 Y0\nS1000 M03\nG00 Z5\nG81 Z-5 R2 F100\nG80\nX20\nM30')).length, 1);
+// G83: шаги 2 -> -1 -> -4 -> -7 -> -10, четыре рабочих хода; Q3000 без точки это те же 3 мм
+d = runMill('G00 X0 Y0\nS1000 M03\nG00 Z5\nG83 Z-10 R2 Q3. F100\nG80\nM30');
+assert.deepStrictEqual(d.issues, []);
+assert.deepStrictEqual(feeds(d).map(m => m.pts[1][2]), [-1, -4, -7, -10]);
+assert.strictEqual(feeds(runMill('G00 X0 Y0\nS1000 M03\nG00 Z5\nG83 Z-10 R2 Q3000 F100\nG80\nM30')).length, 4);
+// Ошибки циклов
+assert.match(errs(runMill('G00 X0 Y0\nS1 M03\nG81 Z-5 F100\nM30'))[0].msg, /нужен R/);
+assert.match(errs(runMill('G00 X0 Y0\nS1 M03\nG83 Z-5 R2 F100\nM30'))[0].msg, /шаг Q/);
+assert.match(errs(runMill('G00 X0 Y0\nS1 M03\nG81 Z5 R2 F100\nM30'))[0].msg, /ниже плоскости R/);
+assert.match(errs(runMill('G00 X0 Y0\nS1 M03\nG84 Z-5 R2 F100\nM30'))[0].msg, /G84/);
+
+// G71 + G70
+const g71 = `G50 S2500
+G96 S180 M03
+T0101
+G00 X50 Z2
+G71 U2. R1.
+G71 P10 Q20 U0.4 W0.1 F0.25
+N10 G00 X20
+G01 Z-10 F0.1
+X40 Z-20
+Z-30
+N20 X50
+G70 P10 Q20
+G00 X100 Z100
+M30`;
+d = runLathe(g71);
+assert.deepStrictEqual(d.issues, []);
+const rough = d.moves.filter(m => m.line === 6 && m.type === 'feed');
+// Старт на радиусе 25, контур с припуском начинается на 10.2: проходы на 23, 21, ... 11, потом проход по контуру
+assert.deepStrictEqual(rough.slice(0, 7).map(m => m.pts[0][1]), [23, 21, 19, 17, 15, 13, 11]);
+assert.strictEqual(rough.length, 8);
+assert.ok(Math.abs(rough[0].pts[1][0] - -29.9) < 1e-9);    // на радиусе 23 упирается в уступ Z-30 + 0.1
+assert.ok(Math.abs(rough[4].pts[1][0] - -14.7) < 1e-9);    // на радиусе 15 упирается в конус
+assert.deepStrictEqual(rough[7].pts[0], [2.1, 10.2, 0]);   // контур с припуском U0.4 W0.1
+// G70 идёт по самому контуру и возвращается в начальную точку
+const fin = d.moves.filter(m => m.line >= 7 && m.line <= 11);
+assert.deepStrictEqual(fin.filter(m => m.type === 'feed').map(m => m.pts[1].slice(0, 2)), [[-10, 10], [-20, 20], [-30, 20], [-30, 25]]);
+assert.deepStrictEqual(d.moves.filter(m => m.line === 12).pop().pts[1], [2, 25, 0]);
+// Ошибки G71
+assert.match(errs(runLathe(g71.replace('G71 U2. R1.\n', '')))[0].msg, /нужен кадр G71 U/);
+assert.match(errs(runLathe(g71.replace('N20 ', '')))[0].msg, /Не найден кадр N20/);
+assert.match(errs(runLathe(g71.replace('X40 Z-20', 'X40 Z-20\nX30')))[0].msg, /в одну сторону/);
+// Бесконечной рекурсии нет: G70 внутри своего контура
+assert.match(errs(runLathe('G00 X50 Z2\nN10 G70 P10 Q20\nN20 X40\nM30'))[0].msg, /отдельно/);
 assert.match(errs(runLathe('G00 X50 Z2\nG90 X40 Z-20 F0.2\nM30'))[0].msg, /G90/);
 function errs(r) { return r.issues.filter(i => i.level === 'error'); }
 function warns(r) { return r.issues.filter(i => i.level === 'warn'); }

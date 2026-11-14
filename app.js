@@ -1,4 +1,4 @@
-const VERSION = '0.2';
+const VERSION = '0.3';
 document.getElementById('ver').textContent = VERSION;
 
 // Переключение вкладок
@@ -88,6 +88,15 @@ showNet();
 // Офлайн-работа
 const ready = document.getElementById('offline-ready');
 if ('serviceWorker' in navigator) {
+  // Пришла новая версия: перезагружаемся сами (при самой первой установке не нужно)
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) location.reload(); });
+  // Приложение вернули из фона: проверяем, нет ли новой версии
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});
+  });
+  document.getElementById('reload').addEventListener('click', () => location.reload());
+
   navigator.serviceWorker.register('sw.js')
     .then(() => navigator.serviceWorker.ready)
     .then(() => { ready.textContent = 'Офлайн: готово, можно включать авиарежим'; })

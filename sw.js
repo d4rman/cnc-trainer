@@ -1,5 +1,5 @@
 // При добавлении нового файла в приложение: дописать его в FILES и поднять номер в CACHE.
-const CACHE = 'cnc-v1';
+const CACHE = 'cnc-v3';
 const FILES = [
   './',
   'index.html',
@@ -12,7 +12,7 @@ const FILES = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
@@ -29,7 +29,8 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    fetch(e.request)
+    // no-cache: всегда спрашиваем у сервера свежую версию, иначе телефон 10 минут показывает старую
+    fetch(e.request.url, { cache: 'no-cache' })
       .then(res => {
         if (res.ok) {
           const copy = res.clone();

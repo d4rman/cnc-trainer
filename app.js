@@ -1,4 +1,4 @@
-const VERSION = '0.4';
+const VERSION = '0.5';
 document.getElementById('ver').textContent = VERSION;
 
 // Переключение вкладок

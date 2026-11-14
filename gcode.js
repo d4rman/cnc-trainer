@@ -1,5 +1,5 @@
 // Разбор и проверка программы Fanuc. Пока только фрезерный режим, плоскость G17 (XY).
-// X10 без точки читается как 10 мм (как на стойке с "калькуляторным" вводом).
+// X10 без точки рисуется как 10 мм, но считается ошибкой (на станках пользователя точка обязательна).
 // Возвращает { moves, issues }:
 //   moves:  { type: 'rapid' | 'feed' | 'arc', pts: [[x, y, z], ...], line }
 //   issues: { line, level: 'error' | 'warn', msg }
@@ -35,7 +35,13 @@ function runMill(text) {
 
       // Слова кадра: буква + число
       const words = [];
-      const rest = blk.replace(/([A-Z])\s*([+-]?(?:\d+\.?\d*|\.\d+))/g, (m, l, v) => { words.push([l, parseFloat(v)]); return ''; }).trim();
+      const rest = blk.replace(/([A-Z])\s*([+-]?(?:\d+\.?\d*|\.\d+))/g, (m, l, v) => {
+        words.push([l, parseFloat(v)]);
+        // Размер без точки: на стойке без "калькуляторного" ввода X10 это 0.010 мм
+        if ('XYZIJKR'.includes(l) && !v.includes('.') && parseFloat(v) !== 0)
+          err(line, l + v + ' без точки: станок может понять это как ' + l + num(parseFloat(v) / 1000) + '. Пиши ' + l + v + '.');
+        return '';
+      }).trim();
       if (rest) { err(line, 'Не могу прочитать: "' + rest + '"'); continue; }
 
       const w = {};

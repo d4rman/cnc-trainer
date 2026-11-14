@@ -1,6 +1,12 @@
 // Самопроверка разбора G-кода. Запуск: node test.js
 const assert = require('assert');
-const { runMill } = require('./gcode.js');
+const gcode = require('./gcode.js');
+// Программы ниже написаны без точек для краткости; точки дописываются тут
+const runMill = s => gcode.runMill(s.replace(/([XYZIJKR])(-?\d+)(?![\d.])/g, '$1$2.'));
+
+// Размер без точки это ошибка, ноль без точки можно
+assert.match(gcode.runMill('G00 X10 Y0\nM30').issues[0].msg, /X10 без точки.*X0\.01\./);
+assert.deepStrictEqual(gcode.runMill('G00 X0 Y0 Z5.\nM30').issues, []);
 const errs = r => r.issues.filter(i => i.level === 'error');
 const warns = r => r.issues.filter(i => i.level === 'warn');
 
